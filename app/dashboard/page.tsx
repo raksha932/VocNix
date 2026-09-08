@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import {
   Activity,
@@ -51,6 +51,9 @@ export default function DashboardPage() {
   const [orgData, setOrgData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Request sequencing ref to prevent stale in-flight responses from overwriting new state
+  const requestIdRef = useRef(0);
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<'events' | 'translators' | 'billing' | 'organization'>('events');
@@ -103,17 +106,21 @@ export default function DashboardPage() {
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
   const fetchDashboardData = async () => {
+    const reqId = ++requestIdRef.current;
     try {
       setError(null);
       const [statsRes, eventsRes, orgRes] = await Promise.all([
-        fetch('/api/dashboard/stats'),
-        fetch('/api/events?all=true'),
-        fetch('/api/organization'),
+        fetch('/api/dashboard/stats', { cache: 'no-store' }),
+        fetch('/api/events?all=true', { cache: 'no-store' }),
+        fetch('/api/organization', { cache: 'no-store' }),
       ]);
 
       const statsData = await statsRes.json();
       const eventsData = await eventsRes.json();
       const orgDataRes = await orgRes.json();
+
+      // Guard: Discard if a newer request was dispatched
+      if (reqId !== requestIdRef.current) return;
 
       if (statsData.success) {
         setStats(statsData.stats);
@@ -129,6 +136,7 @@ export default function DashboardPage() {
       }
       setLoading(false);
     } catch (err: any) {
+      if (reqId !== requestIdRef.current) return;
       setError(err.message || 'Failed to fetch dashboard data');
       setLoading(false);
     }
@@ -136,7 +144,7 @@ export default function DashboardPage() {
 
   const fetchTranslators = async () => {
     try {
-      const res = await fetch('/api/translators');
+      const res = await fetch('/api/translators', { cache: 'no-store' });
       const data = await res.json();
       if (data.success) setTranslators(data.translators || []);
     } catch {}
@@ -145,8 +153,8 @@ export default function DashboardPage() {
   const fetchBilling = async () => {
     try {
       const [pRes, iRes] = await Promise.all([
-        fetch('/api/billing/plans'),
-        fetch('/api/billing/invoices'),
+        fetch('/api/billing/plans', { cache: 'no-store' }),
+        fetch('/api/billing/invoices', { cache: 'no-store' }),
       ]);
       const pData = await pRes.json();
       const iData = await iRes.json();
@@ -185,6 +193,7 @@ export default function DashboardPage() {
       const res = await fetch('/api/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
         body: JSON.stringify({
           title: newEventTitle.trim(),
           description: newEventDesc.trim(),
@@ -198,6 +207,25 @@ export default function DashboardPage() {
         alert(data.error || 'Failed to create event');
         setCreatingEvent(false);
         return;
+      }
+
+      // Immediately and atomically add the returned event to state to prevent any UI blink
+      if (data.event) {
+        const newEventWithRooms = {
+          ...data.event,
+          languages: data.event.languages || selectedLanguages.map((l) => ({ language_code: l.code, language_name: l.name })),
+          rooms: data.rooms || data.event.rooms || [],
+        };
+        setEvents((prev) => [newEventWithRooms, ...prev.filter((ev) => ev.id !== newEventWithRooms.id)]);
+        setStats((prev: any) =>
+          prev
+            ? {
+                ...prev,
+                totalEvents: (prev.totalEvents || 0) + 1,
+                totalRooms: (prev.totalRooms || 0) + (newEventWithRooms.rooms?.length || 0),
+              }
+            : prev
+        );
       }
 
       setNewEventTitle('');
@@ -302,10 +330,20 @@ export default function DashboardPage() {
     try {
       const res = await fetch(`/api/events/${eventId}`, {
         method: 'DELETE',
+        cache: 'no-store',
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        await fetchDashboardData();
+        setEvents((prev) => prev.filter((e) => e.id !== eventId));
+        setStats((prev: any) =>
+          prev
+            ? {
+                ...prev,
+                totalEvents: Math.max(0, (prev.totalEvents || 1) - 1),
+              }
+            : prev
+        );
+        fetchDashboardData();
       } else {
         alert(data.error || 'Failed to delete event from database');
       }

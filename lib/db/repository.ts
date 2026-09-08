@@ -135,10 +135,46 @@ export const Repository = {
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
       if (admin) {
-        const { data, error } = await admin.from('organizations').select('*').limit(1).single();
+        const { data, error } = await admin
+          .from('organizations')
+          .select('*')
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
         if (!error && data) {
           store.organizations.set(data.id, data as Organization);
           return data as Organization;
+        }
+
+        // If no organization exists in Supabase, seed the primary organization in Supabase
+        const defaultOrgId = '00000000-0000-0000-0000-000000000001';
+        const newOrg: Organization = {
+          id: defaultOrgId,
+          name: 'Acme Global Events',
+          slug: 'acme-global',
+          plan_id: undefined,
+          status: 'active',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        const { data: inserted, error: insertErr } = await admin
+          .from('organizations')
+          .upsert({
+            id: newOrg.id,
+            name: newOrg.name,
+            slug: newOrg.slug,
+            status: newOrg.status,
+            created_at: newOrg.created_at,
+            updated_at: newOrg.updated_at,
+          }, { onConflict: 'id' })
+          .select('*')
+          .single();
+
+        if (!insertErr && inserted) {
+          store.organizations.set(inserted.id, inserted as Organization);
+          return inserted as Organization;
         }
       }
     }
@@ -165,7 +201,7 @@ export const Repository = {
     scheduled_start: string;
     scheduled_end?: string;
     languages: Array<{ code: string; name: string }>;
-  }): Promise<{ event: Event; rooms: TranslationRoom[] }> {
+  }): Promise<{ event: Event & { languages: EventLanguage[]; rooms: TranslationRoom[] }; rooms: TranslationRoom[] }> {
     const eventId = randomUUID();
     const publicAccessToken = randomBytes(16).toString('hex');
     const now = new Date().toISOString();
@@ -219,64 +255,86 @@ export const Repository = {
     // Direct persistence to Supabase as authoritative source of truth
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
-      if (admin) {
-        // 1. Insert Event record
-        const { error: eventErr } = await admin.from('events').insert({
-          id: event.id,
-          organization_id: event.organization_id,
-          title: event.title,
-          description: event.description,
-          scheduled_start: event.scheduled_start,
-          scheduled_end: event.scheduled_end || null,
-          status: event.status,
-          public_access_token: event.public_access_token,
-          created_at: event.created_at,
-          updated_at: event.updated_at,
-        });
+      if (!admin) {
+        throw new Error(
+          'Supabase credentials configured, but SUPABASE_SERVICE_ROLE_KEY is missing or invalid in server environment. Events cannot be safely persisted.'
+        );
+      }
 
-        if (eventErr) {
-          console.error('[Repository] Supabase insert event failed:', eventErr);
-          throw new Error(`Failed to save event in Supabase database: ${eventErr.message}`);
+      // 1. Ensure Organization exists in Supabase so foreign key constraint never fails
+      const { data: orgCheck } = await admin
+        .from('organizations')
+        .select('id')
+        .eq('id', event.organization_id)
+        .maybeSingle();
+
+      if (!orgCheck) {
+        await admin.from('organizations').upsert({
+          id: event.organization_id,
+          name: 'Acme Global Events',
+          slug: 'acme-global',
+          status: 'active',
+          created_at: now,
+          updated_at: now,
+        }, { onConflict: 'id' });
+      }
+
+      // 2. Insert Event record
+      const { error: eventErr } = await admin.from('events').insert({
+        id: event.id,
+        organization_id: event.organization_id,
+        title: event.title,
+        description: event.description,
+        scheduled_start: event.scheduled_start,
+        scheduled_end: event.scheduled_end || null,
+        status: event.status,
+        public_access_token: event.public_access_token,
+        created_at: event.created_at,
+        updated_at: event.updated_at,
+      });
+
+      if (eventErr) {
+        console.error('[Repository] Supabase insert event failed:', eventErr);
+        throw new Error(`Failed to save event in Supabase database: ${eventErr.message}`);
+      }
+
+      // 3. Insert Event Languages
+      if (generatedLanguages.length > 0) {
+        const { error: langErr } = await admin.from('event_languages').insert(
+          generatedLanguages.map((l) => ({
+            id: l.id,
+            event_id: l.event_id,
+            language_code: l.language_code,
+            language_name: l.language_name,
+            created_at: l.created_at,
+          }))
+        );
+
+        if (langErr) {
+          console.error('[Repository] Supabase insert languages failed:', langErr);
+          throw new Error(`Failed to save event languages in Supabase database: ${langErr.message}`);
         }
+      }
 
-        // 2. Insert Event Languages
-        if (generatedLanguages.length > 0) {
-          const { error: langErr } = await admin.from('event_languages').insert(
-            generatedLanguages.map((l) => ({
-              id: l.id,
-              event_id: l.event_id,
-              language_code: l.language_code,
-              language_name: l.language_name,
-              created_at: l.created_at,
-            }))
-          );
+      // 4. Insert Dynamic Translation Rooms
+      if (generatedRooms.length > 0) {
+        const { error: roomErr } = await admin.from('translation_rooms').insert(
+          generatedRooms.map((r) => ({
+            id: r.id,
+            event_id: r.event_id,
+            event_language_id: r.event_language_id,
+            livekit_room_name: r.livekit_room_name,
+            secure_room_token: r.secure_room_token,
+            status: r.status,
+            active_listener_count: r.active_listener_count,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+          }))
+        );
 
-          if (langErr) {
-            console.error('[Repository] Supabase insert languages failed:', langErr);
-            throw new Error(`Failed to save event languages in Supabase database: ${langErr.message}`);
-          }
-        }
-
-        // 3. Insert Dynamic Translation Rooms
-        if (generatedRooms.length > 0) {
-          const { error: roomErr } = await admin.from('translation_rooms').insert(
-            generatedRooms.map((r) => ({
-              id: r.id,
-              event_id: r.event_id,
-              event_language_id: r.event_language_id,
-              livekit_room_name: r.livekit_room_name,
-              secure_room_token: r.secure_room_token,
-              status: r.status,
-              active_listener_count: r.active_listener_count,
-              created_at: r.created_at,
-              updated_at: r.updated_at,
-            }))
-          );
-
-          if (roomErr) {
-            console.error('[Repository] Supabase insert translation rooms failed:', roomErr);
-            throw new Error(`Failed to save translation rooms in Supabase database: ${roomErr.message}`);
-          }
+        if (roomErr) {
+          console.error('[Repository] Supabase insert translation rooms failed:', roomErr);
+          throw new Error(`Failed to save translation rooms in Supabase database: ${roomErr.message}`);
         }
       }
     }
@@ -295,7 +353,13 @@ export const Repository = {
       languages: params.languages,
     });
 
-    return { event, rooms: generatedRooms };
+    const fullEvent: Event & { languages: EventLanguage[]; rooms: TranslationRoom[] } = {
+      ...event,
+      languages: generatedLanguages,
+      rooms: generatedRooms,
+    };
+
+    return { event: fullEvent, rooms: generatedRooms };
   },
 
   async getEvents(
@@ -312,8 +376,11 @@ export const Repository = {
             languages:event_languages(*),
             rooms:translation_rooms(*)
           `)
-          .eq('organization_id', organizationId)
           .order('created_at', { ascending: false });
+
+        if (organizationId) {
+          query = query.eq('organization_id', organizationId);
+        }
 
         if (options?.limit) {
           query = query.limit(options.limit);
@@ -324,14 +391,29 @@ export const Repository = {
 
         const { data, error } = await query;
         if (!error && data) {
-          return data.map((e: any) => ({
+          const mapped = data.map((e: any) => ({
             ...e,
             languages: e.languages || [],
             rooms: e.rooms || [],
           }));
+
+          // Sync into memory store
+          for (const ev of mapped) {
+            store.events.set(ev.id, ev);
+            for (const lang of ev.languages) {
+              store.eventLanguages.set(lang.id, lang);
+            }
+            for (const room of ev.rooms) {
+              store.translationRooms.set(room.id, room);
+            }
+          }
+
+          return mapped;
         }
+
         if (error) {
           console.error('[Repository] Error fetching events from Supabase:', error);
+          throw new Error(`Supabase query failed: ${error.message}`);
         }
       }
     }

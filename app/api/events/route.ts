@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Repository } from '@/lib/db/repository';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+const NO_CACHE_HEADERS = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+  'Pragma': 'no-cache',
+  'Expires': '0',
+};
 
 // GET /api/events - List events for the default or authenticated organization
 export async function GET(req: NextRequest) {
@@ -13,11 +20,14 @@ export async function GET(req: NextRequest) {
 
     const org = await Repository.getDefaultOrganization();
     const events = await Repository.getEvents(org.id, { limit });
-    return NextResponse.json({ success: true, events, count: events.length });
+    return NextResponse.json(
+      { success: true, events, count: events.length },
+      { headers: NO_CACHE_HEADERS }
+    );
   } catch (err: any) {
     return NextResponse.json(
       { success: false, error: err.message || 'Failed to fetch events' },
-      { status: 500 }
+      { status: 500, headers: NO_CACHE_HEADERS }
     );
   }
 }
@@ -65,16 +75,19 @@ export async function POST(req: NextRequest) {
       languages,
     });
 
-    return NextResponse.json({
-      success: true,
-      event: result.event,
-      rooms: result.rooms,
-      message: `Created event with ${result.rooms.length} dynamic language translation room(s)`,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        event: result.event,
+        rooms: result.rooms,
+        message: `Created event with ${result.rooms.length} dynamic language translation room(s)`,
+      },
+      { headers: NO_CACHE_HEADERS }
+    );
   } catch (err: any) {
     return NextResponse.json(
       { success: false, error: err.message || 'Failed to create event' },
-      { status: 500 }
+      { status: 500, headers: NO_CACHE_HEADERS }
     );
   }
 }

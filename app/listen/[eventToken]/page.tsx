@@ -48,7 +48,7 @@ export default function AudienceListenPage() {
         setLoadingEvent(true);
         setError(null);
 
-        const res = await fetch('/api/events');
+        const res = await fetch('/api/events?all=true', { cache: 'no-store' });
         const data = await res.json();
 
         if (!res.ok || !data.success) {
