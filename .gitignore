@@ -20,6 +20,7 @@
 # Binary downloads
 /bin/
 livekit.zip
+supabase/.temp/
 
 # Python Virtual Environment
 .venv/
