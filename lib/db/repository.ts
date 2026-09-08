@@ -489,6 +489,9 @@ export const Repository = {
             created_at: data.created_at,
             updated_at: data.updated_at,
           };
+          store.translationRooms.set(room.id, room);
+          store.events.set(data.event.id, data.event as Event);
+          store.eventLanguages.set(data.language.id, data.language as EventLanguage);
           return {
             room,
             event: data.event as Event,
@@ -545,7 +548,17 @@ export const Repository = {
 
   // TRANSLATOR SESSIONS
   async startTranslatorSession(roomId: string, translatorId?: string): Promise<TranslatorSession> {
-    const room = store.translationRooms.get(roomId);
+    let room = store.translationRooms.get(roomId);
+    if (!room && isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data } = await admin.from('translation_rooms').select('*').eq('id', roomId).single();
+        if (data) {
+          room = data as TranslationRoom;
+          store.translationRooms.set(roomId, room);
+        }
+      }
+    }
     if (!room) throw new Error('Room not found');
 
     const now = new Date().toISOString();
@@ -560,13 +573,42 @@ export const Repository = {
     };
     store.translatorSessions.set(session.id, session);
 
+    // If Supabase is configured, persist session and update room/event
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        await admin.from('translator_sessions').insert({
+          id: session.id,
+          translation_room_id: session.translation_room_id,
+          translator_id: session.translator_id || null,
+          status: session.status,
+          started_at: session.started_at,
+          duration_seconds: session.duration_seconds,
+          created_at: session.created_at,
+        });
+
+        await admin.from('translation_rooms').update({ status: 'live', updated_at: now }).eq('id', roomId);
+        await admin.from('events').update({ status: 'live', updated_at: now }).eq('id', room.event_id).eq('status', 'scheduled');
+      }
+    }
+
     // Update room status
     room.status = 'live';
     room.updated_at = now;
     store.translationRooms.set(roomId, room);
 
     // Update event status to live if scheduled
-    const event = store.events.get(room.event_id);
+    let event = store.events.get(room.event_id);
+    if (!event && isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data } = await admin.from('events').select('*').eq('id', room.event_id).single();
+        if (data) {
+          event = data as Event;
+          store.events.set(event.id, event);
+        }
+      }
+    }
     if (event && event.status === 'scheduled') {
       event.status = 'live';
       event.updated_at = now;
@@ -582,17 +624,33 @@ export const Repository = {
   },
 
   async pauseTranslatorSession(sessionId: string): Promise<TranslatorSession | null> {
-    const session = store.translatorSessions.get(sessionId);
+    let session = store.translatorSessions.get(sessionId);
+    if (!session && isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data } = await admin.from('translator_sessions').select('*').eq('id', sessionId).single();
+        if (data) session = data as TranslatorSession;
+      }
+    }
     if (!session) return null;
 
+    const now = new Date().toISOString();
     session.status = 'paused';
-    session.paused_at = new Date().toISOString();
+    session.paused_at = now;
     store.translatorSessions.set(sessionId, session);
+
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        await admin.from('translator_sessions').update({ status: 'paused', paused_at: now }).eq('id', sessionId);
+        await admin.from('translation_rooms').update({ status: 'paused', updated_at: now }).eq('id', session.translation_room_id);
+      }
+    }
 
     const room = store.translationRooms.get(session.translation_room_id);
     if (room) {
       room.status = 'paused';
-      room.updated_at = new Date().toISOString();
+      room.updated_at = now;
       store.translationRooms.set(room.id, room);
     }
 
@@ -600,17 +658,33 @@ export const Repository = {
   },
 
   async resumeTranslatorSession(sessionId: string): Promise<TranslatorSession | null> {
-    const session = store.translatorSessions.get(sessionId);
+    let session = store.translatorSessions.get(sessionId);
+    if (!session && isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data } = await admin.from('translator_sessions').select('*').eq('id', sessionId).single();
+        if (data) session = data as TranslatorSession;
+      }
+    }
     if (!session) return null;
 
+    const now = new Date().toISOString();
     session.status = 'live';
     session.paused_at = undefined;
     store.translatorSessions.set(sessionId, session);
 
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        await admin.from('translator_sessions').update({ status: 'live', paused_at: null }).eq('id', sessionId);
+        await admin.from('translation_rooms').update({ status: 'live', updated_at: now }).eq('id', session.translation_room_id);
+      }
+    }
+
     const room = store.translationRooms.get(session.translation_room_id);
     if (room) {
       room.status = 'live';
-      room.updated_at = new Date().toISOString();
+      room.updated_at = now;
       store.translationRooms.set(room.id, room);
     }
 
@@ -618,7 +692,14 @@ export const Repository = {
   },
 
   async stopTranslatorSession(sessionId: string): Promise<{ session: TranslatorSession; usageMinutes: number } | null> {
-    const session = store.translatorSessions.get(sessionId);
+    let session = store.translatorSessions.get(sessionId);
+    if (!session && isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data } = await admin.from('translator_sessions').select('*').eq('id', sessionId).single();
+        if (data) session = data as TranslatorSession;
+      }
+    }
     if (!session) return null;
 
     const now = new Date();
@@ -631,13 +712,44 @@ export const Repository = {
     session.duration_seconds = durationSeconds;
     store.translatorSessions.set(sessionId, session);
 
-    const room = store.translationRooms.get(session.translation_room_id);
+    let room = store.translationRooms.get(session.translation_room_id);
+    if (!room && isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data } = await admin.from('translation_rooms').select('*').eq('id', session.translation_room_id).single();
+        if (data) room = data as TranslationRoom;
+      }
+    }
+
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        await admin.from('translator_sessions').update({
+          status: 'stopped',
+          ended_at: session.ended_at,
+          duration_seconds: durationSeconds,
+        }).eq('id', sessionId);
+
+        if (room) {
+          await admin.from('translation_rooms').update({ status: 'ended', updated_at: now.toISOString() }).eq('id', room.id);
+        }
+      }
+    }
+
     if (room) {
       room.status = 'ended';
       room.updated_at = now.toISOString();
       store.translationRooms.set(room.id, room);
 
-      const event = store.events.get(room.event_id);
+      let event = store.events.get(room.event_id);
+      if (!event && isSupabaseConfigured()) {
+        const admin = getSupabaseAdmin();
+        if (admin) {
+          const { data } = await admin.from('events').select('*').eq('id', room.event_id).single();
+          if (data) event = data as Event;
+        }
+      }
+
       if (event) {
         // Record authoritative usage record
         const usageRecord: UsageRecord = {
@@ -651,6 +763,21 @@ export const Repository = {
         };
         store.usageRecords.set(usageRecord.id, usageRecord);
 
+        if (isSupabaseConfigured()) {
+          const admin = getSupabaseAdmin();
+          if (admin) {
+            await admin.from('usage_records').insert({
+              id: usageRecord.id,
+              organization_id: usageRecord.organization_id,
+              event_id: usageRecord.event_id,
+              translation_room_id: usageRecord.translation_room_id,
+              translator_session_id: usageRecord.translator_session_id,
+              minutes_used: usageRecord.minutes_used,
+              recorded_at: usageRecord.recorded_at,
+            });
+          }
+        }
+
         await this.logActivity(event.organization_id, 'SESSION_STOPPED', `Session stopped. Duration: ${durationMinutes} minutes`, {
           sessionId: session.id,
           durationMinutes,
@@ -663,7 +790,17 @@ export const Repository = {
 
   // AUDIENCE LISTENERS
   async registerAudienceJoin(roomId: string, sessionKey: string, meta?: { ip?: string; ua?: string }): Promise<number> {
-    const room = store.translationRooms.get(roomId);
+    let room = store.translationRooms.get(roomId);
+    if (!room && isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data } = await admin.from('translation_rooms').select('*').eq('id', roomId).single();
+        if (data) {
+          room = data as TranslationRoom;
+          store.translationRooms.set(roomId, room);
+        }
+      }
+    }
     if (!room) return 0;
 
     const existing = Array.from(store.audienceSessions.values()).find(
@@ -695,7 +832,17 @@ export const Repository = {
   },
 
   async registerAudienceLeave(roomId: string, sessionKey: string): Promise<number> {
-    const room = store.translationRooms.get(roomId);
+    let room = store.translationRooms.get(roomId);
+    if (!room && isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data } = await admin.from('translation_rooms').select('*').eq('id', roomId).single();
+        if (data) {
+          room = data as TranslationRoom;
+          store.translationRooms.set(roomId, room);
+        }
+      }
+    }
     if (!room) return 0;
 
     const audSession = Array.from(store.audienceSessions.values()).find(
@@ -736,7 +883,17 @@ export const Repository = {
     const plan = org?.plan_id ? store.plans.get(org.plan_id) : Array.from(store.plans.values())[0];
     const quotaMinutes = plan?.monthly_minute_quota || 120;
 
-    const records = Array.from(store.usageRecords.values()).filter(r => r.organization_id === organizationId);
+    let records = Array.from(store.usageRecords.values()).filter(r => r.organization_id === organizationId);
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data } = await admin.from('usage_records').select('*').eq('organization_id', organizationId);
+        if (data && data.length > 0) {
+          records = data as UsageRecord[];
+        }
+      }
+    }
+
     const usedMinutes = records.reduce((acc, r) => acc + Number(r.minutes_used), 0);
     const remainingMinutes = Math.max(0, Number((quotaMinutes - usedMinutes).toFixed(2)));
     const isLimitExceeded = usedMinutes >= quotaMinutes;
