@@ -75,7 +75,7 @@ function initMemoryStore(): DataStore {
 
   // Default Primary Organization
   const defaultOrg: Organization = {
-    id: 'org-default-1',
+    id: '00000000-0000-0000-0000-000000000001',
     name: 'Acme Global Events',
     slug: 'acme-global',
     plan_id: proPlan.id,
@@ -121,20 +121,33 @@ export const Repository = {
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
       if (admin) {
-        const { data } = await admin.from('organizations').select('*').eq('id', orgId).single();
-        if (data) return data as Organization;
+        const { data, error } = await admin.from('organizations').select('*').eq('id', orgId).single();
+        if (!error && data) {
+          store.organizations.set(data.id, data as Organization);
+          return data as Organization;
+        }
       }
     }
     return store.organizations.get(orgId) || null;
   },
 
   async getDefaultOrganization(): Promise<Organization> {
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data, error } = await admin.from('organizations').select('*').limit(1).single();
+        if (!error && data) {
+          store.organizations.set(data.id, data as Organization);
+          return data as Organization;
+        }
+      }
+    }
     const orgs = Array.from(store.organizations.values());
     if (orgs.length > 0) return orgs[0];
     const newOrg: Organization = {
-      id: randomUUID(),
-      name: 'Default Organization',
-      slug: 'default-org',
+      id: '00000000-0000-0000-0000-000000000001',
+      name: 'Acme Global Events',
+      slug: 'acme-global',
       plan_id: 'plan-pro',
       status: 'active',
       created_at: new Date().toISOString(),
@@ -144,7 +157,7 @@ export const Repository = {
     return newOrg;
   },
 
-  // EVENTS & DYNAMIC ROOM CREATION
+  // EVENTS & DYNAMIC ROOM CREATION (PERMANENT SUPABASE STORAGE)
   async createEvent(params: {
     organization_id: string;
     title: string;
@@ -160,8 +173,8 @@ export const Repository = {
     const event: Event = {
       id: eventId,
       organization_id: params.organization_id,
-      title: params.title,
-      description: params.description || '',
+      title: params.title.trim(),
+      description: params.description?.trim() || '',
       scheduled_start: params.scheduled_start,
       scheduled_end: params.scheduled_end,
       status: 'scheduled',
@@ -170,8 +183,7 @@ export const Repository = {
       updated_at: now,
     };
 
-    store.events.set(event.id, event);
-
+    const generatedLanguages: EventLanguage[] = [];
     const generatedRooms: TranslationRoom[] = [];
 
     // Dynamically create language and room records
@@ -184,7 +196,7 @@ export const Repository = {
         language_name: lang.name.trim(),
         created_at: now,
       };
-      store.eventLanguages.set(langId, eventLang);
+      generatedLanguages.push(eventLang);
 
       const roomId = randomUUID();
       const secureToken = randomBytes(24).toString('hex');
@@ -201,8 +213,81 @@ export const Repository = {
         created_at: now,
         updated_at: now,
       };
-      store.translationRooms.set(roomId, room);
       generatedRooms.push(room);
+    }
+
+    // Direct persistence to Supabase as authoritative source of truth
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        // 1. Insert Event record
+        const { error: eventErr } = await admin.from('events').insert({
+          id: event.id,
+          organization_id: event.organization_id,
+          title: event.title,
+          description: event.description,
+          scheduled_start: event.scheduled_start,
+          scheduled_end: event.scheduled_end || null,
+          status: event.status,
+          public_access_token: event.public_access_token,
+          created_at: event.created_at,
+          updated_at: event.updated_at,
+        });
+
+        if (eventErr) {
+          console.error('[Repository] Supabase insert event failed:', eventErr);
+          throw new Error(`Failed to save event in Supabase database: ${eventErr.message}`);
+        }
+
+        // 2. Insert Event Languages
+        if (generatedLanguages.length > 0) {
+          const { error: langErr } = await admin.from('event_languages').insert(
+            generatedLanguages.map((l) => ({
+              id: l.id,
+              event_id: l.event_id,
+              language_code: l.language_code,
+              language_name: l.language_name,
+              created_at: l.created_at,
+            }))
+          );
+
+          if (langErr) {
+            console.error('[Repository] Supabase insert languages failed:', langErr);
+            throw new Error(`Failed to save event languages in Supabase database: ${langErr.message}`);
+          }
+        }
+
+        // 3. Insert Dynamic Translation Rooms
+        if (generatedRooms.length > 0) {
+          const { error: roomErr } = await admin.from('translation_rooms').insert(
+            generatedRooms.map((r) => ({
+              id: r.id,
+              event_id: r.event_id,
+              event_language_id: r.event_language_id,
+              livekit_room_name: r.livekit_room_name,
+              secure_room_token: r.secure_room_token,
+              status: r.status,
+              active_listener_count: r.active_listener_count,
+              created_at: r.created_at,
+              updated_at: r.updated_at,
+            }))
+          );
+
+          if (roomErr) {
+            console.error('[Repository] Supabase insert translation rooms failed:', roomErr);
+            throw new Error(`Failed to save translation rooms in Supabase database: ${roomErr.message}`);
+          }
+        }
+      }
+    }
+
+    // Sync memory store cache
+    store.events.set(event.id, event);
+    for (const lang of generatedLanguages) {
+      store.eventLanguages.set(lang.id, lang);
+    }
+    for (const room of generatedRooms) {
+      store.translationRooms.set(room.id, room);
     }
 
     await this.logActivity(params.organization_id, 'EVENT_CREATED', `Event "${event.title}" created with ${params.languages.length} languages`, {
@@ -213,38 +298,164 @@ export const Repository = {
     return { event, rooms: generatedRooms };
   },
 
-  async getEvents(organizationId: string): Promise<Array<Event & { languages: EventLanguage[]; rooms: TranslationRoom[] }>> {
-    const events = Array.from(store.events.values()).filter(e => e.organization_id === organizationId);
-    return events.map(event => {
-      const languages = Array.from(store.eventLanguages.values()).filter(l => l.event_id === event.id);
-      const rooms = Array.from(store.translationRooms.values()).filter(r => r.event_id === event.id);
+  async getEvents(
+    organizationId: string,
+    options?: { limit?: number; offset?: number }
+  ): Promise<Array<Event & { languages: EventLanguage[]; rooms: TranslationRoom[] }>> {
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        let query = admin
+          .from('events')
+          .select(`
+            *,
+            languages:event_languages(*),
+            rooms:translation_rooms(*)
+          `)
+          .eq('organization_id', organizationId)
+          .order('created_at', { ascending: false });
+
+        if (options?.limit) {
+          query = query.limit(options.limit);
+        }
+        if (options?.offset) {
+          query = query.range(options.offset, options.offset + (options.limit || 10) - 1);
+        }
+
+        const { data, error } = await query;
+        if (!error && data) {
+          return data.map((e: any) => ({
+            ...e,
+            languages: e.languages || [],
+            rooms: e.rooms || [],
+          }));
+        }
+        if (error) {
+          console.error('[Repository] Error fetching events from Supabase:', error);
+        }
+      }
+    }
+
+    let events = Array.from(store.events.values())
+      .filter((e) => e.organization_id === organizationId)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    if (options?.limit) {
+      events = events.slice(options.offset || 0, (options.offset || 0) + options.limit);
+    }
+
+    return events.map((event) => {
+      const languages = Array.from(store.eventLanguages.values()).filter((l) => l.event_id === event.id);
+      const rooms = Array.from(store.translationRooms.values()).filter((r) => r.event_id === event.id);
       return { ...event, languages, rooms };
     });
   },
 
   async getEventById(eventId: string): Promise<(Event & { languages: EventLanguage[]; rooms: TranslationRoom[] }) | null> {
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data, error } = await admin
+          .from('events')
+          .select(`
+            *,
+            languages:event_languages(*),
+            rooms:translation_rooms(*)
+          `)
+          .eq('id', eventId)
+          .single();
+
+        if (!error && data) {
+          return {
+            ...data,
+            languages: data.languages || [],
+            rooms: data.rooms || [],
+          } as Event & { languages: EventLanguage[]; rooms: TranslationRoom[] };
+        }
+      }
+    }
     const event = store.events.get(eventId);
     if (!event) return null;
-    const languages = Array.from(store.eventLanguages.values()).filter(l => l.event_id === event.id);
-    const rooms = Array.from(store.translationRooms.values()).filter(r => r.event_id === event.id);
+    const languages = Array.from(store.eventLanguages.values()).filter((l) => l.event_id === event.id);
+    const rooms = Array.from(store.translationRooms.values()).filter((r) => r.event_id === event.id);
     return { ...event, languages, rooms };
   },
 
   async getEventByPublicToken(token: string): Promise<(Event & { languages: EventLanguage[]; rooms: TranslationRoom[] }) | null> {
-    const event = Array.from(store.events.values()).find(e => e.public_access_token === token);
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data, error } = await admin
+          .from('events')
+          .select(`
+            *,
+            languages:event_languages(*),
+            rooms:translation_rooms(*)
+          `)
+          .eq('public_access_token', token)
+          .single();
+
+        if (!error && data) {
+          return {
+            ...data,
+            languages: data.languages || [],
+            rooms: data.rooms || [],
+          } as Event & { languages: EventLanguage[]; rooms: TranslationRoom[] };
+        }
+      }
+    }
+    const event = Array.from(store.events.values()).find((e) => e.public_access_token === token);
     if (!event) return null;
-    const languages = Array.from(store.eventLanguages.values()).filter(l => l.event_id === event.id);
-    const rooms = Array.from(store.translationRooms.values()).filter(r => r.event_id === event.id);
+    const languages = Array.from(store.eventLanguages.values()).filter((l) => l.event_id === event.id);
+    const rooms = Array.from(store.translationRooms.values()).filter((r) => r.event_id === event.id);
     return { ...event, languages, rooms };
   },
 
   async updateEventStatus(eventId: string, status: Event['status']): Promise<Event | null> {
+    const now = new Date().toISOString();
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data, error } = await admin
+          .from('events')
+          .update({ status, updated_at: now })
+          .eq('id', eventId)
+          .select('*')
+          .single();
+
+        if (!error && data) {
+          store.events.set(eventId, data as Event);
+          return data as Event;
+        }
+      }
+    }
     const event = store.events.get(eventId);
     if (!event) return null;
     event.status = status;
-    event.updated_at = new Date().toISOString();
+    event.updated_at = now;
     store.events.set(eventId, event);
     return event;
+  },
+
+  async deleteEvent(eventId: string): Promise<boolean> {
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { error } = await admin.from('events').delete().eq('id', eventId);
+        if (error) {
+          console.error('[Repository] Error deleting event from Supabase:', error);
+          throw new Error(`Failed to delete event from database: ${error.message}`);
+        }
+      }
+    }
+    store.events.delete(eventId);
+    for (const [langId, lang] of Array.from(store.eventLanguages.entries())) {
+      if (lang.event_id === eventId) store.eventLanguages.delete(langId);
+    }
+    for (const [roomId, room] of Array.from(store.translationRooms.entries())) {
+      if (room.event_id === eventId) store.translationRooms.delete(roomId);
+    }
+    return true;
   },
 
   // TRANSLATION ROOMS
@@ -253,7 +464,41 @@ export const Repository = {
     event: Event;
     language: EventLanguage;
   } | null> {
-    const room = Array.from(store.translationRooms.values()).find(r => r.secure_room_token === secureToken);
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data, error } = await admin
+          .from('translation_rooms')
+          .select(`
+            *,
+            event:events(*),
+            language:event_languages(*)
+          `)
+          .eq('secure_room_token', secureToken)
+          .single();
+
+        if (!error && data && data.event && data.language) {
+          const room: TranslationRoom = {
+            id: data.id,
+            event_id: data.event_id,
+            event_language_id: data.event_language_id,
+            livekit_room_name: data.livekit_room_name,
+            secure_room_token: data.secure_room_token,
+            status: data.status,
+            active_listener_count: data.active_listener_count,
+            created_at: data.created_at,
+            updated_at: data.updated_at,
+          };
+          return {
+            room,
+            event: data.event as Event,
+            language: data.language as EventLanguage,
+          };
+        }
+      }
+    }
+
+    const room = Array.from(store.translationRooms.values()).find((r) => r.secure_room_token === secureToken);
     if (!room) return null;
     const event = store.events.get(room.event_id);
     const language = store.eventLanguages.get(room.event_language_id);
@@ -262,14 +507,38 @@ export const Repository = {
   },
 
   async getRoomById(roomId: string): Promise<TranslationRoom | null> {
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data, error } = await admin.from('translation_rooms').select('*').eq('id', roomId).single();
+        if (!error && data) return data as TranslationRoom;
+      }
+    }
     return store.translationRooms.get(roomId) || null;
   },
 
   async updateRoomStatus(roomId: string, status: TranslationRoom['status']): Promise<TranslationRoom | null> {
+    const now = new Date().toISOString();
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data, error } = await admin
+          .from('translation_rooms')
+          .update({ status, updated_at: now })
+          .eq('id', roomId)
+          .select('*')
+          .single();
+
+        if (!error && data) {
+          store.translationRooms.set(roomId, data as TranslationRoom);
+          return data as TranslationRoom;
+        }
+      }
+    }
     const room = store.translationRooms.get(roomId);
     if (!room) return null;
     room.status = status;
-    room.updated_at = new Date().toISOString();
+    room.updated_at = now;
     store.translationRooms.set(roomId, room);
     return room;
   },
@@ -505,13 +774,12 @@ export const Repository = {
 
   // DASHBOARD AGGREGATES
   async getDashboardStats(organizationId: string) {
-    const events = Array.from(store.events.values()).filter(e => e.organization_id === organizationId);
-    const activeEvents = events.filter(e => e.status === 'live');
-    const scheduledEvents = events.filter(e => e.status === 'scheduled');
-    
-    const eventIds = new Set(events.map(e => e.id));
-    const rooms = Array.from(store.translationRooms.values()).filter(r => eventIds.has(r.event_id));
-    const liveRooms = rooms.filter(r => r.status === 'live');
+    const events = await this.getEvents(organizationId);
+    const activeEvents = events.filter((e) => e.status === 'live');
+    const scheduledEvents = events.filter((e) => e.status === 'scheduled');
+
+    const rooms = events.flatMap((e) => e.rooms || []);
+    const liveRooms = rooms.filter((r) => r.status === 'live');
     const totalLiveListeners = liveRooms.reduce((acc, r) => acc + (r.active_listener_count || 0), 0);
 
     const usage = await this.getOrganizationUsage(organizationId);
@@ -533,11 +801,25 @@ export const Repository = {
 
   // 1. MANAGE ORGANIZATION
   async updateOrganization(orgId: string, updates: { name?: string; slug?: string }): Promise<Organization | null> {
+    const now = new Date().toISOString();
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const updatePayload: any = { updated_at: now };
+        if (updates.name) updatePayload.name = updates.name.trim();
+        if (updates.slug) updatePayload.slug = updates.slug.trim().toLowerCase().replace(/\s+/g, '-');
+        const { data, error } = await admin.from('organizations').update(updatePayload).eq('id', orgId).select('*').single();
+        if (!error && data) {
+          store.organizations.set(orgId, data as Organization);
+          return data as Organization;
+        }
+      }
+    }
     const org = store.organizations.get(orgId);
     if (!org) return null;
     if (updates.name) org.name = updates.name.trim();
     if (updates.slug) org.slug = updates.slug.trim().toLowerCase().replace(/\s+/g, '-');
-    org.updated_at = new Date().toISOString();
+    org.updated_at = now;
     store.organizations.set(orgId, org);
     await this.logActivity(orgId, 'ORGANIZATION_UPDATED', `Organization details updated to "${org.name}"`);
     return org;
@@ -551,6 +833,33 @@ export const Repository = {
     scheduled_end?: string;
     status?: Event['status'];
   }): Promise<Event | null> {
+    const now = new Date().toISOString();
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const updateData: any = { updated_at: now };
+        if (updates.title !== undefined) updateData.title = updates.title.trim();
+        if (updates.description !== undefined) updateData.description = updates.description.trim();
+        if (updates.scheduled_start !== undefined) updateData.scheduled_start = updates.scheduled_start;
+        if (updates.scheduled_end !== undefined) updateData.scheduled_end = updates.scheduled_end;
+        if (updates.status !== undefined) updateData.status = updates.status;
+
+        const { data, error } = await admin
+          .from('events')
+          .update(updateData)
+          .eq('id', eventId)
+          .select('*')
+          .single();
+
+        if (error) {
+          throw new Error(`Failed to update event in Supabase: ${error.message}`);
+        }
+        if (data) {
+          store.events.set(eventId, data as Event);
+          return data as Event;
+        }
+      }
+    }
     const event = store.events.get(eventId);
     if (!event) return null;
     if (updates.title) event.title = updates.title.trim();
@@ -558,7 +867,7 @@ export const Repository = {
     if (updates.scheduled_start) event.scheduled_start = updates.scheduled_start;
     if (updates.scheduled_end !== undefined) event.scheduled_end = updates.scheduled_end;
     if (updates.status) event.status = updates.status;
-    event.updated_at = new Date().toISOString();
+    event.updated_at = now;
     store.events.set(eventId, event);
     await this.logActivity(event.organization_id, 'EVENT_UPDATED', `Event "${event.title}" was updated (status: ${event.status})`);
     return event;
@@ -566,7 +875,7 @@ export const Repository = {
 
   // 3. MANAGE LANGUAGES FOR EVENT
   async addEventLanguage(eventId: string, lang: { code: string; name: string }): Promise<TranslationRoom> {
-    const event = store.events.get(eventId);
+    const event = await this.getEventById(eventId);
     if (!event) throw new Error('Event not found');
 
     const now = new Date().toISOString();
@@ -578,7 +887,6 @@ export const Repository = {
       language_name: lang.name.trim(),
       created_at: now,
     };
-    store.eventLanguages.set(langId, eventLang);
 
     const roomId = randomUUID();
     const secureToken = randomBytes(24).toString('hex');
@@ -595,6 +903,35 @@ export const Repository = {
       created_at: now,
       updated_at: now,
     };
+
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { error: langErr } = await admin.from('event_languages').insert({
+          id: eventLang.id,
+          event_id: eventLang.event_id,
+          language_code: eventLang.language_code,
+          language_name: eventLang.language_name,
+          created_at: eventLang.created_at,
+        });
+        if (langErr) throw new Error(`Supabase insert language failed: ${langErr.message}`);
+
+        const { error: roomErr } = await admin.from('translation_rooms').insert({
+          id: room.id,
+          event_id: room.event_id,
+          event_language_id: room.event_language_id,
+          livekit_room_name: room.livekit_room_name,
+          secure_room_token: room.secure_room_token,
+          status: room.status,
+          active_listener_count: room.active_listener_count,
+          created_at: room.created_at,
+          updated_at: room.updated_at,
+        });
+        if (roomErr) throw new Error(`Supabase insert translation room failed: ${roomErr.message}`);
+      }
+    }
+
+    store.eventLanguages.set(langId, eventLang);
     store.translationRooms.set(roomId, room);
 
     await this.logActivity(event.organization_id, 'LANGUAGE_ADDED', `Added language "${lang.name}" to event "${event.title}"`);
@@ -602,9 +939,14 @@ export const Repository = {
   },
 
   async removeEventLanguage(eventId: string, languageId: string): Promise<boolean> {
-    const event = store.events.get(eventId);
-    const lang = store.eventLanguages.get(languageId);
-    if (!lang) return false;
+    const event = await this.getEventById(eventId);
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { error } = await admin.from('event_languages').delete().eq('id', languageId);
+        if (error) throw new Error(`Supabase delete language failed: ${error.message}`);
+      }
+    }
 
     // Remove room mapped to this language
     for (const [roomId, room] of Array.from(store.translationRooms.entries())) {
@@ -615,7 +957,7 @@ export const Repository = {
 
     store.eventLanguages.delete(languageId);
     if (event) {
-      await this.logActivity(event.organization_id, 'LANGUAGE_REMOVED', `Removed language "${lang.language_name}" from event "${event.title}"`);
+      await this.logActivity(event.organization_id, 'LANGUAGE_REMOVED', `Removed language from event "${event.title}"`);
     }
     return true;
   },

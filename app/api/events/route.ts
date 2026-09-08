@@ -6,9 +6,14 @@ export const dynamic = 'force-dynamic';
 // GET /api/events - List events for the default or authenticated organization
 export async function GET(req: NextRequest) {
   try {
+    const { searchParams } = new URL(req.url);
+    const all = searchParams.get('all') === 'true';
+    const limitParam = searchParams.get('limit');
+    const limit = all ? undefined : (limitParam ? parseInt(limitParam, 10) : undefined);
+
     const org = await Repository.getDefaultOrganization();
-    const events = await Repository.getEvents(org.id);
-    return NextResponse.json({ success: true, events });
+    const events = await Repository.getEvents(org.id, { limit });
+    return NextResponse.json({ success: true, events, count: events.length });
   } catch (err: any) {
     return NextResponse.json(
       { success: false, error: err.message || 'Failed to fetch events' },

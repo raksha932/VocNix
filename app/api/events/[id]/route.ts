@@ -16,17 +16,21 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const body = await req.json();
-    const { status } = body;
-    if (!status) {
-      return NextResponse.json({ success: false, error: 'Status is required' }, { status: 400 });
-    }
-
-    const updated = await Repository.updateEventStatus(params.id, status);
+    const updated = await Repository.editEvent(params.id, body);
     if (!updated) {
       return NextResponse.json({ success: false, error: 'Event not found' }, { status: 404 });
     }
 
     return NextResponse.json({ success: true, event: updated });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    await Repository.deleteEvent(params.id);
+    return NextResponse.json({ success: true, message: 'Event deleted successfully from database' });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }

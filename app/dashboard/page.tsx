@@ -26,6 +26,15 @@ import {
   FileText,
   Sparkles,
   Settings,
+  Search,
+  Filter,
+  Table,
+  RefreshCw,
+  Download,
+  Database,
+  ListFilter,
+  Eye,
+  CheckCircle2,
 } from 'lucide-react';
 import QRCodeModal from '@/components/QRCodeModal';
 
@@ -46,10 +55,17 @@ export default function DashboardPage() {
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
   const [orgData, setOrgData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<'events' | 'translators' | 'billing' | 'organization'>('events');
+
+  // Excel Table & History State
+  const [eventsViewMode, setEventsViewMode] = useState<'excel' | 'cards'>('excel');
+  const [viewAllEvents, setViewAllEvents] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'scheduled' | 'live' | 'ended'>('all');
 
   // QR Code Modal State
   const [qrModal, setQrModal] = useState<{ isOpen: boolean; url: string; title: string }>({
@@ -98,7 +114,7 @@ export default function DashboardPage() {
       setError(null);
       const [statsRes, eventsRes, orgRes] = await Promise.all([
         fetch('/api/dashboard/stats'),
-        fetch('/api/events'),
+        fetch('/api/events?all=true'),
         fetch('/api/organization'),
       ]);
 
@@ -279,6 +295,86 @@ export default function DashboardPage() {
       alert(err.message);
     }
   };
+
+  // 4b. DELETE EVENT (PERMANENT SUPABASE DELETION)
+  const handleDeleteEvent = async (eventId: string, title: string) => {
+    if (
+      !window.confirm(
+        `Are you sure you want to delete "${title}"?\n\nThis will permanently delete the event, dynamic translation channels, and all associated session logs from the Supabase PostgreSQL database.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/events/${eventId}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        await fetchDashboardData();
+      } else {
+        alert(data.error || 'Failed to delete event from database');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error deleting event');
+    }
+  };
+
+  // EXPORT TO EXCEL / CSV
+  const handleExportCSV = () => {
+    if (events.length === 0) {
+      alert('No events available in Supabase to export.');
+      return;
+    }
+
+    const headers = ['Event ID', 'Title', 'Description', 'Status', 'Languages', 'Scheduled Start', 'Created At', 'Public Access Token'];
+    const rows = events.map((ev) => [
+      ev.id,
+      `"${(ev.title || '').replace(/"/g, '""')}"`,
+      `"${(ev.description || '').replace(/"/g, '""')}"`,
+      ev.status,
+      `"${(ev.languages?.map((l: any) => l.language_name).join(', ') || '').replace(/"/g, '""')}"`,
+      ev.scheduled_start,
+      ev.created_at,
+      ev.public_access_token,
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `vocnix_events_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    await fetchDashboardData();
+    setTimeout(() => setIsRefreshing(false), 500);
+  };
+
+  // Filtered & displayed events for Excel table and history
+  const filteredEvents = events.filter((event) => {
+    const matchesSearch =
+      !searchQuery.trim() ||
+      event.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      event.id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (event.description && event.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      event.languages?.some((l: any) =>
+        l.language_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        l.language_code?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+
+    const matchesStatus =
+      statusFilter === 'all' || event.status === statusFilter;
+
+    return matchesSearch && matchesStatus;
+  });
+
+  const displayedEvents = viewAllEvents ? filteredEvents : filteredEvents.slice(0, 10);
 
   // 5. INVITE TRANSLATOR
   const handleInviteTranslator = async (e: React.FormEvent) => {
@@ -504,21 +600,147 @@ export default function DashboardPage() {
       </div>
 
       {/* ==========================================================
-          TAB 1: EVENTS, ROOMS, LINKS, QR CODES & EDITING
+          TAB 1: EVENTS, PERMANENT SUPABASE STORAGE & EXCEL TABLE
           ========================================================== */}
       {activeTab === 'events' && (
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-white tracking-tight">Organization Events</h2>
-            <span className="text-xs text-slate-400">{events.length} configured events</span>
+          {/* Header & Control Bar */}
+          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-xl">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <h2 className="text-xl font-bold text-white tracking-tight">Event Management & History</h2>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1.5" />
+                    Supabase PostgreSQL DB
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Authoritative permanent database records. Stored in Supabase tables: <code className="font-mono text-slate-300">events</code>, <code className="font-mono text-slate-300">event_languages</code>, <code className="font-mono text-slate-300">translation_rooms</code>.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Manual Refresh Button */}
+                <button
+                  onClick={handleManualRefresh}
+                  disabled={isRefreshing}
+                  title="Force re-fetch all records directly from Supabase"
+                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl border border-slate-700 flex items-center space-x-1.5 transition disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-emerald-400' : ''}`} />
+                  <span>{isRefreshing ? 'Syncing...' : 'Sync DB'}</span>
+                </button>
+
+                {/* Export CSV / Excel */}
+                <button
+                  onClick={handleExportCSV}
+                  title="Export events as CSV (Excel compatible)"
+                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl border border-slate-700 flex items-center space-x-1.5 transition"
+                >
+                  <Download className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Export Excel</span>
+                </button>
+
+                {/* View Mode Toggle: Excel Table vs Cards */}
+                <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
+                  <button
+                    onClick={() => setEventsViewMode('excel')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition ${
+                      eventsViewMode === 'excel'
+                        ? 'bg-emerald-500 text-white shadow'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Table className="w-3.5 h-3.5" />
+                    <span>Spreadsheet Table</span>
+                  </button>
+                  <button
+                    onClick={() => setEventsViewMode('cards')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition ${
+                      eventsViewMode === 'cards'
+                        ? 'bg-emerald-500 text-white shadow'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>Channel Cards</span>
+                  </button>
+                </div>
+
+                {/* Create Event Button */}
+                <button
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-xl flex items-center space-x-1.5 transition shadow-lg shadow-emerald-500/20"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Create Event</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Filter and Search Bar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-slate-800">
+              {/* Search input */}
+              <div className="relative flex-1 max-w-md">
+                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search events by name, ID, language..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Status Filter & View All Toggle */}
+              <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-1 bg-slate-950 px-2.5 py-1.5 rounded-xl border border-slate-800">
+                  <Filter className="w-3.5 h-3.5 text-slate-400" />
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as any)}
+                    className="bg-transparent text-xs text-slate-300 focus:outline-none"
+                  >
+                    <option value="all" className="bg-slate-900">All Statuses</option>
+                    <option value="scheduled" className="bg-slate-900">Scheduled</option>
+                    <option value="live" className="bg-slate-900">Live Broadcasting</option>
+                    <option value="ended" className="bg-slate-900">Ended</option>
+                  </select>
+                </div>
+
+                {/* View All Events / Show Recent 10 Toggle */}
+                <button
+                  onClick={() => setViewAllEvents(!viewAllEvents)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition flex items-center space-x-1.5 ${
+                    viewAllEvents
+                      ? 'bg-blue-500/20 text-blue-400 border-blue-500/40'
+                      : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>
+                    {viewAllEvents ? 'Show Recent 10' : `View All Events (${events.length})`}
+                  </span>
+                </button>
+              </div>
+            </div>
           </div>
 
           {events.length === 0 ? (
             <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-12 text-center space-y-4">
               <Radio className="w-12 h-12 text-slate-600 mx-auto" />
-              <h3 className="text-lg font-semibold text-white">No Events Configured</h3>
+              <h3 className="text-lg font-semibold text-white">No Events Stored in Supabase</h3>
               <p className="text-sm text-slate-400 max-w-sm mx-auto">
-                Create your first event to automatically generate dynamic WebRTC audio rooms.
+                Create an event to automatically persist records in Supabase PostgreSQL tables.
               </p>
               <button
                 onClick={() => setIsCreateModalOpen(true)}
@@ -527,9 +749,269 @@ export default function DashboardPage() {
                 Create Event Now
               </button>
             </div>
+          ) : filteredEvents.length === 0 ? (
+            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-8 text-center space-y-2">
+              <p className="text-sm text-slate-400">No events matched your search or status filter.</p>
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setStatusFilter('all');
+                }}
+                className="text-xs text-emerald-400 hover:underline"
+              >
+                Clear search & filters
+              </button>
+            </div>
+          ) : eventsViewMode === 'excel' ? (
+            /* ==========================================================
+               EXCEL-SHEET-LIKE EVENT MANAGEMENT TABLE
+               ========================================================== */
+            <div className="space-y-3">
+              <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/70 shadow-xl backdrop-blur-sm">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-950/80 border-b border-slate-800 text-slate-400 uppercase tracking-wider text-[11px] font-semibold">
+                      <th className="py-3 px-4">Event ID</th>
+                      <th className="py-3 px-4">Event Name & Info</th>
+                      <th className="py-3 px-4">Mode / Type</th>
+                      <th className="py-3 px-4">Languages / Rooms</th>
+                      <th className="py-3 px-4">Date & Time</th>
+                      <th className="py-3 px-4">Created At</th>
+                      <th className="py-3 px-4">Status</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-normal">
+                    {displayedEvents.map((event) => {
+                      const audienceUrl =
+                        typeof window !== 'undefined'
+                          ? `${window.location.origin}/listen/${event.public_access_token}`
+                          : `/listen/${event.public_access_token}`;
+
+                      const scheduledDate = new Date(event.scheduled_start);
+                      const formattedDate = !isNaN(scheduledDate.getTime())
+                        ? scheduledDate.toLocaleDateString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })
+                        : 'Immediate';
+                      const formattedTime = !isNaN(scheduledDate.getTime())
+                        ? scheduledDate.toLocaleTimeString(undefined, {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : '';
+
+                      const createdDate = new Date(event.created_at);
+                      const formattedCreated = !isNaN(createdDate.getTime())
+                        ? createdDate.toLocaleDateString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : '—';
+
+                      return (
+                        <tr
+                          key={event.id}
+                          className="hover:bg-slate-800/40 transition-colors group"
+                        >
+                          {/* Event ID */}
+                          <td className="py-3.5 px-4 font-mono text-[11px] text-slate-400 whitespace-nowrap">
+                            <div className="flex items-center space-x-1.5">
+                              <span
+                                title={event.id}
+                                className="bg-slate-950 px-2 py-0.5 rounded border border-slate-800 font-mono text-slate-300"
+                              >
+                                {event.id.slice(0, 8)}...
+                              </span>
+                              <button
+                                onClick={() => handleCopy(event.id, `id-${event.id}`)}
+                                title="Copy full Event UUID"
+                                className="text-slate-500 hover:text-slate-300 transition"
+                              >
+                                {copiedToken === `id-${event.id}` ? (
+                                  <Check className="w-3 h-3 text-emerald-400" />
+                                ) : (
+                                  <Copy className="w-3 h-3" />
+                                )}
+                              </button>
+                            </div>
+                          </td>
+
+                          {/* Event Name & Description */}
+                          <td className="py-3.5 px-4 max-w-xs">
+                            <div className="font-bold text-white text-sm group-hover:text-emerald-400 transition-colors">
+                              {event.title}
+                            </div>
+                            {event.description ? (
+                              <p className="text-[11px] text-slate-400 truncate max-w-xs mt-0.5" title={event.description}>
+                                {event.description}
+                              </p>
+                            ) : (
+                              <span className="text-[10px] text-slate-500 italic">No description provided</span>
+                            )}
+                          </td>
+
+                          {/* Mode / Type */}
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                              <Radio className="w-3 h-3 mr-1" />
+                              WebRTC Audio
+                            </span>
+                          </td>
+
+                          {/* Languages / Channels */}
+                          <td className="py-3.5 px-4">
+                            <div className="flex flex-wrap gap-1 items-center max-w-[220px]">
+                              {event.languages && event.languages.length > 0 ? (
+                                event.languages.map((l: any) => (
+                                  <span
+                                    key={l.id || l.language_code}
+                                    title={l.language_name}
+                                    className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-[10px] font-semibold text-slate-300 uppercase"
+                                  >
+                                    {l.language_code}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-[10px] text-slate-500">None</span>
+                              )}
+                              <span className="text-[10px] text-slate-400 ml-1">
+                                ({event.rooms?.length || 0} rooms)
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Date & Time */}
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <div className="text-slate-200 font-medium">{formattedDate}</div>
+                            {formattedTime && (
+                              <div className="text-[11px] text-slate-400">{formattedTime}</div>
+                            )}
+                          </td>
+
+                          {/* Created At */}
+                          <td className="py-3.5 px-4 whitespace-nowrap text-slate-400 text-[11px]">
+                            {formattedCreated}
+                          </td>
+
+                          {/* Status */}
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <span
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                event.status === 'live'
+                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                  : event.status === 'scheduled'
+                                  ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                                  : 'bg-slate-800 text-slate-400 border border-slate-700'
+                              }`}
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
+                                  event.status === 'live'
+                                    ? 'bg-emerald-400 animate-pulse'
+                                    : event.status === 'scheduled'
+                                    ? 'bg-blue-400'
+                                    : 'bg-slate-400'
+                                }`}
+                              />
+                              {event.status}
+                            </span>
+                          </td>
+
+                          {/* Actions */}
+                          <td className="py-3.5 px-4 whitespace-nowrap text-right">
+                            <div className="flex items-center justify-end space-x-1.5">
+                              {/* QR Code */}
+                              <button
+                                onClick={() =>
+                                  setQrModal({
+                                    isOpen: true,
+                                    url: audienceUrl,
+                                    title: event.title,
+                                  })
+                                }
+                                title="Show Audience QR Code"
+                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-emerald-400 border border-slate-700 transition"
+                              >
+                                <QrCode className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* Copy Link */}
+                              <button
+                                onClick={() => handleCopy(audienceUrl, `aud-${event.id}`)}
+                                title="Copy Public Audience Listener Link"
+                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-emerald-400 border border-slate-700 transition"
+                              >
+                                {copiedToken === `aud-${event.id}` ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+
+                              {/* Open Audience Page */}
+                              <Link
+                                href={`/listen/${event.public_access_token}`}
+                                target="_blank"
+                                title="Open Listener Room in new tab"
+                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-blue-400 border border-slate-700 transition"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </Link>
+
+                              {/* Edit Event */}
+                              <button
+                                onClick={() => openEditModal(event)}
+                                title="Edit Event Details & Languages"
+                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-400 border border-slate-700 transition"
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* Delete Event */}
+                              <button
+                                onClick={() => handleDeleteEvent(event.id, event.title)}
+                                title="Permanently Delete Event from Supabase"
+                                className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 border border-red-500/20 transition"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Table Footer / Pagination Notice */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-2 text-xs text-slate-400">
+                <div>
+                  Showing <span className="font-semibold text-slate-200">{displayedEvents.length}</span> of{' '}
+                  <span className="font-semibold text-slate-200">{filteredEvents.length}</span> filtered events (Total in Supabase DB: <span className="font-semibold text-emerald-400">{events.length}</span>)
+                </div>
+
+                {!viewAllEvents && filteredEvents.length > 10 && (
+                  <button
+                    onClick={() => setViewAllEvents(true)}
+                    className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold underline underline-offset-2"
+                  >
+                    View All {filteredEvents.length} Events
+                  </button>
+                )}
+              </div>
+            </div>
           ) : (
+            /* ==========================================================
+               CARD VIEW (Alternative View with Dynamic Language Tiles)
+               ========================================================== */
             <div className="space-y-6">
-              {events.map((event) => {
+              {displayedEvents.map((event) => {
                 const audienceUrl =
                   typeof window !== 'undefined'
                     ? `${window.location.origin}/listen/${event.public_access_token}`
@@ -558,20 +1040,21 @@ export default function DashboardPage() {
                         {event.description && (
                           <p className="text-xs text-slate-400 mt-1">{event.description}</p>
                         )}
+                        <div className="text-[11px] font-mono text-slate-500 mt-1">
+                          ID: {event.id} • Created: {new Date(event.created_at).toLocaleDateString()}
+                        </div>
                       </div>
 
-                      {/* Action buttons: Edit, QR Code, Copy Link, Open */}
+                      {/* Action buttons: Edit, QR Code, Copy Link, Open, Delete */}
                       <div className="flex flex-wrap items-center gap-2">
-                        {/* Edit Event Button */}
                         <button
                           onClick={() => openEditModal(event)}
                           className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg border border-slate-700 flex items-center space-x-1.5 transition"
                         >
                           <Edit className="w-3.5 h-3.5 text-blue-400" />
-                          <span>Edit Event</span>
+                          <span>Edit</span>
                         </button>
 
-                        {/* QR Code Button */}
                         <button
                           onClick={() =>
                             setQrModal({
@@ -586,7 +1069,6 @@ export default function DashboardPage() {
                           <span>QR Code</span>
                         </button>
 
-                        {/* Copy Audience Link */}
                         <button
                           onClick={() => handleCopy(audienceUrl, `aud-${event.id}`)}
                           className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg border border-slate-700 flex items-center space-x-1.5 transition"
@@ -611,6 +1093,14 @@ export default function DashboardPage() {
                         >
                           <ExternalLink className="w-4 h-4" />
                         </Link>
+
+                        <button
+                          onClick={() => handleDeleteEvent(event.id, event.title)}
+                          title="Permanently Delete Event"
+                          className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg border border-red-500/20 transition"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
 
