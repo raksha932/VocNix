@@ -2,9 +2,9 @@
 
 [![Next.js](https://img.shields.io/badge/Next.js-14.2.15-black?style=flat&logo=next.js)](https://nextjs.org/)
 [![LiveKit](https://img.shields.io/badge/LiveKit-WebRTC%20SFU-00D26A?style=flat)](https://livekit.io/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue?style=flat&logo=typescript)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue?style=flat&logo=typescript)](https://www.typescriptlang.org/)
 [![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.4-38B2AC?style=flat&logo=tailwind-css)](https://tailwindcss.com/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](bin/LICENSE)
 
 **VocNix** is a production-grade, multi-tenant SaaS platform engineered for **real-time, audio-only human translation** across global conferences, summits, and multilingual broadcasts. Built without prototypes, synthetic AI voices, or simulated streams, VocNix provides a sub-second latency WebRTC infrastructure connecting live human translators directly to worldwide audience members.
 
@@ -51,7 +51,7 @@
 
 ### 1. Dynamic Language Rooms (Zero Hardcoding)
 - Translation channels are generated dynamically at runtime from database records.
-- Scheduling an event with Tamil, Hindi, and French automatically mints isolated WebRTC rooms (`evt_<id>_lang_<code`).
+- Scheduling an event with Tamil, Hindi, and French automatically mints isolated WebRTC rooms (`evt_<id>_lang_<code>`).
 - Strict cryptographic token scoping guarantees **zero cross-language audio leakage**.
 
 ### 2. Real-Time WebRTC Audio Engine
@@ -126,8 +126,8 @@
 ### 1. Clone & Install
 
 ```bash
-git clone https://github.com/<your-username>/vocnix.git
-cd vocnix
+git clone https://github.com/raksha932/VocNix.git
+cd VocNix
 npm install
 ```
 
