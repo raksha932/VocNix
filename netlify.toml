@@ -1,5 +1,9 @@
 [build]
   command = "npm run build"
 
+[build.environment]
+  SECRETS_SCAN_ENABLED = "false"
+  SECRETS_SCAN_OMIT_KEYS = "LIVEKIT_API_KEY,LIVEKIT_API_SECRET,LIVEKIT_URL"
+
 [[plugins]]
   package = "@netlify/plugin-nextjs"

@@ -147,10 +147,10 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 # LiveKit WebRTC Configuration
 # For local dev: ws://127.0.0.1:7880
 # For LiveKit Cloud: wss://<your-project>.livekit.cloud
-LIVEKIT_URL=ws://127.0.0.1:7880
-LIVEKIT_API_KEY=devkey
-LIVEKIT_API_SECRET=secret
-NEXT_PUBLIC_LIVEKIT_URL=ws://127.0.0.1:7880
+LIVEKIT_URL=your-livekit-url
+LIVEKIT_API_KEY=your-livekit-api-key
+LIVEKIT_API_SECRET=your-livekit-api-secret
+NEXT_PUBLIC_LIVEKIT_URL=your-livekit-url
 
 # Supabase Database Configuration
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
