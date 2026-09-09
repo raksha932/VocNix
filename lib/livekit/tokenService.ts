@@ -7,10 +7,14 @@ export interface LiveKitConfig {
   isConfigured: boolean;
 }
 
+function cleanEnv(val: string | undefined): string {
+  return (val || '').trim().replace(/^["']|["']$/g, '').trim();
+}
+
 export function getLiveKitConfig(): LiveKitConfig {
-  const url = process.env.LIVEKIT_URL || process.env.NEXT_PUBLIC_LIVEKIT_URL || '';
-  const apiKey = process.env.LIVEKIT_API_KEY || '';
-  const apiSecret = process.env.LIVEKIT_API_SECRET || '';
+  const url = cleanEnv(process.env.LIVEKIT_URL || process.env.NEXT_PUBLIC_LIVEKIT_URL);
+  const apiKey = cleanEnv(process.env.LIVEKIT_API_KEY);
+  const apiSecret = cleanEnv(process.env.LIVEKIT_API_SECRET);
 
   const isConfigured = Boolean(
     url &&
