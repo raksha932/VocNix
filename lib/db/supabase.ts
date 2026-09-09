@@ -1,13 +1,14 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 function getEnv(key: string): string {
-  return (process.env[key] || '').trim();
+  const raw = process.env[key] || '';
+  return raw.trim().replace(/^["']|["']$/g, '').trim();
 }
 
 export const isSupabaseConfigured = (): boolean => {
   const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
   const anonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
-  const serviceKey = getEnv('SUPABASE_SERVICE_ROLE_KEY');
+  const serviceKey = getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY');
   return Boolean(
     url &&
     url !== 'https://your-project.supabase.co' &&
@@ -17,7 +18,7 @@ export const isSupabaseConfigured = (): boolean => {
 
 export const hasSupabaseAdminConfigured = (): boolean => {
   const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
-  const serviceKey = getEnv('SUPABASE_SERVICE_ROLE_KEY');
+  const serviceKey = getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY');
   return Boolean(
     url &&
     url !== 'https://your-project.supabase.co' &&
@@ -34,7 +35,7 @@ export const getSupabaseClient = (): SupabaseClient | null => {
     return null;
   }
   const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
-  const anonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY') || getEnv('SUPABASE_SERVICE_ROLE_KEY');
+  const anonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY') || getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY');
   if (!clientInstance) {
     clientInstance = createClient(url, anonKey, {
       auth: {
@@ -48,7 +49,7 @@ export const getSupabaseClient = (): SupabaseClient | null => {
 
 export const getSupabaseAdmin = (): SupabaseClient | null => {
   const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
-  const serviceKey = getEnv('SUPABASE_SERVICE_ROLE_KEY');
+  const serviceKey = getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY');
 
   if (!url || url === 'https://your-project.supabase.co' || !serviceKey || serviceKey === 'your-service-role-key') {
     if (isSupabaseConfigured() && !serviceKey) {
