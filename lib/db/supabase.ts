@@ -13,10 +13,22 @@ function cleanSupabaseUrl(rawUrl: string): string {
   return u;
 }
 
+function getSupabaseUrl(): string {
+  return cleanSupabaseUrl(getEnv('NEXT_PUBLIC_SUPABASE_URL') || getEnv('SUPABASE_URL'));
+}
+
+function getSupabaseAnonKey(): string {
+  return getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY') || getEnv('SUPABASE_ANON_KEY');
+}
+
+function getSupabaseServiceKey(): string {
+  return getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY');
+}
+
 export const isSupabaseConfigured = (): boolean => {
-  const url = cleanSupabaseUrl(getEnv('NEXT_PUBLIC_SUPABASE_URL'));
-  const anonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
-  const serviceKey = getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY');
+  const url = getSupabaseUrl();
+  const anonKey = getSupabaseAnonKey();
+  const serviceKey = getSupabaseServiceKey();
   return Boolean(
     url &&
     url !== 'https://your-project.supabase.co' &&
@@ -25,8 +37,8 @@ export const isSupabaseConfigured = (): boolean => {
 };
 
 export const hasSupabaseAdminConfigured = (): boolean => {
-  const url = cleanSupabaseUrl(getEnv('NEXT_PUBLIC_SUPABASE_URL'));
-  const serviceKey = getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY');
+  const url = getSupabaseUrl();
+  const serviceKey = getSupabaseServiceKey();
   return Boolean(
     url &&
     url !== 'https://your-project.supabase.co' &&
@@ -42,8 +54,8 @@ export const getSupabaseClient = (): SupabaseClient | null => {
   if (!isSupabaseConfigured()) {
     return null;
   }
-  const url = cleanSupabaseUrl(getEnv('NEXT_PUBLIC_SUPABASE_URL'));
-  const anonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY') || getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY');
+  const url = getSupabaseUrl();
+  const anonKey = getSupabaseAnonKey() || getSupabaseServiceKey();
   if (!clientInstance) {
     clientInstance = createClient(url, anonKey, {
       auth: {
@@ -56,12 +68,12 @@ export const getSupabaseClient = (): SupabaseClient | null => {
 };
 
 export const getSupabaseAdmin = (): SupabaseClient | null => {
-  const url = cleanSupabaseUrl(getEnv('NEXT_PUBLIC_SUPABASE_URL'));
-  const serviceKey = getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY');
+  const url = getSupabaseUrl();
+  const serviceKey = getSupabaseServiceKey();
 
   if (!url || url === 'https://your-project.supabase.co' || !serviceKey || serviceKey === 'your-service-role-key') {
     if (isSupabaseConfigured() && !serviceKey) {
-      console.warn('[Supabase] Warning: NEXT_PUBLIC_SUPABASE_URL is set, but SUPABASE_SERVICE_ROLE_KEY is missing. Admin operations bypassing RLS will fail.');
+      console.warn('[Supabase] Warning: NEXT_PUBLIC_SUPABASE_URL/SUPABASE_URL is set, but SUPABASE_SERVICE_ROLE_KEY is missing. Admin operations bypassing RLS will fail.');
     }
     return null;
   }
