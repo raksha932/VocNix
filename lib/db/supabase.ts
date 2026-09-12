@@ -5,8 +5,16 @@ function getEnv(key: string): string {
   return raw.trim().replace(/^["']|["']$/g, '').trim();
 }
 
+function cleanSupabaseUrl(rawUrl: string): string {
+  let u = (rawUrl || '').trim().replace(/^["']|["']$/g, '').trim();
+  // Strip any accidental sub-paths like /rest/v1, /rest, or trailing slashes
+  u = u.replace(/\/rest(\/v1)?\/?$/i, '');
+  u = u.replace(/\/+$/, '');
+  return u;
+}
+
 export const isSupabaseConfigured = (): boolean => {
-  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
+  const url = cleanSupabaseUrl(getEnv('NEXT_PUBLIC_SUPABASE_URL'));
   const anonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
   const serviceKey = getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY');
   return Boolean(
@@ -17,7 +25,7 @@ export const isSupabaseConfigured = (): boolean => {
 };
 
 export const hasSupabaseAdminConfigured = (): boolean => {
-  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
+  const url = cleanSupabaseUrl(getEnv('NEXT_PUBLIC_SUPABASE_URL'));
   const serviceKey = getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY');
   return Boolean(
     url &&
@@ -34,7 +42,7 @@ export const getSupabaseClient = (): SupabaseClient | null => {
   if (!isSupabaseConfigured()) {
     return null;
   }
-  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
+  const url = cleanSupabaseUrl(getEnv('NEXT_PUBLIC_SUPABASE_URL'));
   const anonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY') || getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY');
   if (!clientInstance) {
     clientInstance = createClient(url, anonKey, {
@@ -48,7 +56,7 @@ export const getSupabaseClient = (): SupabaseClient | null => {
 };
 
 export const getSupabaseAdmin = (): SupabaseClient | null => {
-  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
+  const url = cleanSupabaseUrl(getEnv('NEXT_PUBLIC_SUPABASE_URL'));
   const serviceKey = getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY');
 
   if (!url || url === 'https://your-project.supabase.co' || !serviceKey || serviceKey === 'your-service-role-key') {
