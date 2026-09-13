@@ -89,16 +89,63 @@ export const getSupabaseAdmin = (): SupabaseClient | null => {
   return adminInstance;
 };
 
+function inspectJwt(token: string): { role?: string; ref?: string; validJwt: boolean } {
+  try {
+    const parts = (token || '').split('.');
+    if (parts.length !== 3) return { validJwt: false };
+    const payloadStr = Buffer.from(parts[1], 'base64').toString('utf8');
+    const payload = JSON.parse(payloadStr);
+    return {
+      role: payload.role,
+      ref: payload.ref,
+      validJwt: true,
+    };
+  } catch {
+    return { validJwt: false };
+  }
+}
+
 export async function checkDatabaseHealth(): Promise<{
   connected: boolean;
   configured: boolean;
   message: string;
+  debug?: Record<string, any>;
 }> {
+  const url = getSupabaseUrl();
+  const anonKey = getSupabaseAnonKey();
+  const serviceKey = getSupabaseServiceKey();
+
+  let urlProjectRef = 'none';
+  try {
+    if (url) urlProjectRef = new URL(url).hostname.split('.')[0];
+  } catch {}
+
+  const anonInfo = inspectJwt(anonKey);
+  const serviceInfo = inspectJwt(serviceKey);
+
+  const debug = {
+    urlHost: urlProjectRef ? `${urlProjectRef}.supabase.co` : 'not-configured',
+    anonKey: {
+      configured: Boolean(anonKey),
+      validJwt: anonInfo.validJwt,
+      role: anonInfo.role || 'unknown',
+      ref: anonInfo.ref || 'unknown',
+    },
+    serviceKey: {
+      configured: Boolean(serviceKey),
+      validJwt: serviceInfo.validJwt,
+      role: serviceInfo.role || 'unknown',
+      ref: serviceInfo.ref || 'unknown',
+      matchesUrlProject: serviceInfo.ref === urlProjectRef,
+    },
+  };
+
   if (!isSupabaseConfigured()) {
     return {
       connected: false,
       configured: false,
       message: 'Supabase credentials not configured in environment (NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)',
+      debug,
     };
   }
 
@@ -108,7 +155,8 @@ export async function checkDatabaseHealth(): Promise<{
       return {
         connected: false,
         configured: true,
-        message: 'Supabase service role key missing; read-only mode available',
+        message: 'Supabase service role key missing or invalid; admin client could not be initialized',
+        debug,
       };
     }
     const { error } = await admin.from('organizations').select('id').limit(1);
@@ -116,19 +164,22 @@ export async function checkDatabaseHealth(): Promise<{
       return {
         connected: false,
         configured: true,
-        message: `Database query failed: ${error.message}. Ensure migrations have been applied.`,
+        message: `Database query failed: ${error.message}. Ensure migrations have been applied and service key matches project URL.`,
+        debug,
       };
     }
     return {
       connected: true,
       configured: true,
       message: 'Connected to Supabase PostgreSQL database',
+      debug,
     };
   } catch (err: any) {
     return {
       connected: false,
       configured: true,
       message: `Database connection error: ${err?.message || 'Unknown error'}`,
+      debug,
     };
   }
 }
