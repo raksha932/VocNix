@@ -13,8 +13,20 @@ function cleanSupabaseUrl(rawUrl: string): string {
   return u;
 }
 
-function getSupabaseUrl(): string {
-  return cleanSupabaseUrl(getEnv('NEXT_PUBLIC_SUPABASE_URL') || getEnv('SUPABASE_URL'));
+function inspectJwt(token: string): { role?: string; ref?: string; validJwt: boolean } {
+  try {
+    const parts = (token || '').split('.');
+    if (parts.length !== 3) return { validJwt: false };
+    const payloadStr = Buffer.from(parts[1], 'base64').toString('utf8');
+    const payload = JSON.parse(payloadStr);
+    return {
+      role: payload.role,
+      ref: payload.ref,
+      validJwt: true,
+    };
+  } catch {
+    return { validJwt: false };
+  }
 }
 
 function getSupabaseAnonKey(): string {
@@ -23,6 +35,25 @@ function getSupabaseAnonKey(): string {
 
 function getSupabaseServiceKey(): string {
   return getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY');
+}
+
+function getSupabaseUrl(): string {
+  let url = cleanSupabaseUrl(getEnv('NEXT_PUBLIC_SUPABASE_URL') || getEnv('SUPABASE_URL'));
+  const serviceKey = getSupabaseServiceKey();
+  const anonKey = getSupabaseAnonKey();
+
+  const tokenRef = inspectJwt(serviceKey).ref || inspectJwt(anonKey).ref;
+  if (tokenRef && url) {
+    try {
+      const parsed = new URL(url);
+      const currentRef = parsed.hostname.split('.')[0];
+      if (currentRef !== tokenRef && parsed.hostname.endsWith('.supabase.co')) {
+        console.warn(`[Supabase] Auto-correcting project URL from ${currentRef} to ${tokenRef} to match API keys!`);
+        url = `https://${tokenRef}.supabase.co`;
+      }
+    } catch {}
+  }
+  return url;
 }
 
 export const isSupabaseConfigured = (): boolean => {
@@ -88,22 +119,6 @@ export const getSupabaseAdmin = (): SupabaseClient | null => {
   }
   return adminInstance;
 };
-
-function inspectJwt(token: string): { role?: string; ref?: string; validJwt: boolean } {
-  try {
-    const parts = (token || '').split('.');
-    if (parts.length !== 3) return { validJwt: false };
-    const payloadStr = Buffer.from(parts[1], 'base64').toString('utf8');
-    const payload = JSON.parse(payloadStr);
-    return {
-      role: payload.role,
-      ref: payload.ref,
-      validJwt: true,
-    };
-  } catch {
-    return { validJwt: false };
-  }
-}
 
 export async function checkDatabaseHealth(): Promise<{
   connected: boolean;
