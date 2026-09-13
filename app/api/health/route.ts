@@ -29,6 +29,13 @@ export async function GET() {
         status: liveKitConfig.isConfigured
           ? 'LiveKit credentials configured and ready'
           : 'LiveKit credentials missing or using placeholders (LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET)',
+        debug: {
+          apiKeyPrefix: liveKitConfig.apiKey ? liveKitConfig.apiKey.slice(0, 4) : 'none',
+          apiKeyLength: liveKitConfig.apiKey ? liveKitConfig.apiKey.length : 0,
+          apiSecretLength: liveKitConfig.apiSecret ? liveKitConfig.apiSecret.length : 0,
+          isDevKey: liveKitConfig.apiKey === 'devkey',
+          isDevSecret: liveKitConfig.apiSecret === 'secret',
+        },
       },
       features: {
         realTimeAudio: 'LiveKit/WebRTC Audio Engine',
