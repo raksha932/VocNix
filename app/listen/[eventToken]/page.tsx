@@ -111,6 +111,88 @@ export default function AudienceListenPage() {
     return () => {
       // Leave audience session
       if (selectedLanguageRoom?.id && sessionKeyRef.current) {
+        const payload = JSON.stringify({
+          roomId: selectedLanguageRoom.id,
+          sessionKey: sessionKeyRef.current,
+        });
+        if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+          navigator.sendBeacon('/api/audience/leave', new Blob([payload], { type: 'application/json' }));
+        } else {
+          fetch('/api/audience/leave', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: payload,
+            keepalive: true,
+          }).catch(() => {});
+        }
+      }
+      service.disconnect();
+    };
+  }, []);
+
+  // Reliable tab close / browser leave cleanup via sendBeacon
+  useEffect(() => {
+    const handleLeave = () => {
+      if (selectedLanguageRoom?.id && sessionKeyRef.current) {
+        const payload = JSON.stringify({
+          roomId: selectedLanguageRoom.id,
+          sessionKey: sessionKeyRef.current,
+        });
+        if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+          navigator.sendBeacon('/api/audience/leave', new Blob([payload], { type: 'application/json' }));
+        } else {
+          fetch('/api/audience/leave', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: payload,
+            keepalive: true,
+          }).catch(() => {});
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleLeave);
+    window.addEventListener('pagehide', handleLeave);
+    return () => {
+      window.removeEventListener('beforeunload', handleLeave);
+      window.removeEventListener('pagehide', handleLeave);
+    };
+  }, [selectedLanguageRoom?.id]);
+
+  // Periodic heartbeat while connected to maintain live count & record duration
+  useEffect(() => {
+    if (!selectedLanguageRoom?.id || !sessionKeyRef.current || !audioConnected) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/audience/heartbeat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomId: selectedLanguageRoom.id,
+            sessionKey: sessionKeyRef.current,
+          }),
+        });
+        const data = await res.json();
+        if (data.success && typeof data.listeners === 'number') {
+          setListenerCount(data.listeners);
+        }
+      } catch {}
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [selectedLanguageRoom?.id, audioConnected]);
+
+  // 3. Connect to selected dynamic language room
+  const handleConnectToRoom = async (roomObj: any) => {
+    if (!roomObj) return;
+
+    try {
+      setConnectingAudio(true);
+      setError(null);
+
+      // If switching from another room, leave previous channel
+      if (selectedLanguageRoom?.id && selectedLanguageRoom.id !== roomObj.id && sessionKeyRef.current) {
         fetch('/api/audience/leave', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -120,17 +202,6 @@ export default function AudienceListenPage() {
           }),
         }).catch(() => {});
       }
-      service.disconnect();
-    };
-  }, []);
-
-  // 3. Connect to selected dynamic language room
-  const handleConnectToRoom = async (roomObj: any) => {
-    if (!roomObj) return;
-
-    try {
-      setConnectingAudio(true);
-      setError(null);
 
       // Disconnect previous audio if connected
       if (audioServiceRef.current) {
@@ -147,6 +218,7 @@ export default function AudienceListenPage() {
           sessionKey: sessionKeyRef.current || undefined,
         }),
       });
+
 
       const data = await res.json();
       if (!res.ok || !data.success) {

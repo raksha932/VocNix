@@ -592,8 +592,13 @@ export default function DashboardPage() {
               style={{ width: `${quotaPercent}%` }}
             />
           </div>
+          <div className="text-[11px] text-slate-400 flex items-center justify-between pt-0.5">
+            <span>Broadcast: {stats?.liveMinutes ? `${stats.liveMinutes}m active` : 'Idle'}</span>
+            <span>Audience: {stats?.audienceListeningMinutes || 0}m</span>
+          </div>
         </div>
       </div>
+
 
       {/* ==========================================================
           TAB 1: EVENTS, PERMANENT SUPABASE STORAGE & EXCEL TABLE

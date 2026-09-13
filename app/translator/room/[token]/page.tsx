@@ -57,7 +57,11 @@ export default function TranslatorRoomPage() {
   useEffect(() => {
     const service = new AudioService({
       onConnectionChange: (status) => setConnectionStatus(status),
-      onParticipantCountChange: (count) => setListenerCount(count),
+      onParticipantCountChange: (count) => {
+        if (count > 0) {
+          setListenerCount((prev) => Math.max(prev, count));
+        }
+      },
       onAudioLevelChange: (level) => setAudioLevel(level),
       onError: (err) => setError(err.message),
     });
@@ -111,6 +115,15 @@ export default function TranslatorRoomPage() {
         setSessionId(data.sessionId);
         setLivekitToken(data.token);
         setWsUrl(data.wsUrl);
+
+        if (data.room?.startedAt) {
+          const startedMs = new Date(data.room.startedAt).getTime();
+          const elapsed = Math.max(0, Math.floor((Date.now() - startedMs) / 1000));
+          if (elapsed < 12 * 3600) {
+            setElapsedSeconds(elapsed);
+          }
+        }
+
         setLoading(false);
       } catch (err: any) {
         setError(err.message || 'Network error authenticating room');
@@ -136,26 +149,35 @@ export default function TranslatorRoomPage() {
     };
   }, [broadcastState]);
 
-  // Periodic listener count sync
+  // Periodic real-time listener count sync
   useEffect(() => {
     if (!roomData?.id) return;
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/events`);
+        // 1. Direct dedicated room stats
+        const res = await fetch(`/api/rooms/${roomData.id}/stats`, { cache: 'no-store' });
         const data = await res.json();
-        if (data.success && data.events) {
-          for (const ev of data.events) {
-            const foundRoom = ev.rooms?.find((r: any) => r.id === roomData.id);
-            if (foundRoom) {
-              setListenerCount(foundRoom.active_listener_count || 0);
-              break;
+        if (data.success && typeof data.listenerCount === 'number') {
+          setListenerCount(data.listenerCount);
+        } else {
+          // 2. Fallback to /api/events
+          const evRes = await fetch(`/api/events`, { cache: 'no-store' });
+          const evData = await evRes.json();
+          if (evData.success && evData.events) {
+            for (const ev of evData.events) {
+              const foundRoom = ev.rooms?.find((r: any) => r.id === roomData.id);
+              if (foundRoom) {
+                setListenerCount(foundRoom.active_listener_count || 0);
+                break;
+              }
             }
           }
         }
       } catch {}
-    }, 5000);
+    }, 3000);
     return () => clearInterval(interval);
   }, [roomData?.id]);
+
 
   // ==========================================================
   // TRANSLATOR CONTROLS

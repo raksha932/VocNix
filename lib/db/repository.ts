@@ -644,21 +644,41 @@ export const Repository = {
     if (!room) throw new Error('Room not found');
 
     const now = new Date().toISOString();
-    const session: TranslatorSession = {
-      id: randomUUID(),
-      translation_room_id: roomId,
-      translator_id: translatorId,
-      status: 'live',
-      started_at: now,
-      duration_seconds: 0,
-      created_at: now,
-    };
-    store.translatorSessions.set(session.id, session);
 
-    // If Supabase is configured, persist session and update room/event
+    // If Supabase is configured, check if an active live session already exists within the past 4 hours
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
       if (admin) {
+        const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+        const { data: existingActive } = await admin
+          .from('translator_sessions')
+          .select('*')
+          .eq('translation_room_id', roomId)
+          .eq('status', 'live')
+          .gte('started_at', fourHoursAgo)
+          .order('started_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (existingActive) {
+          store.translatorSessions.set(existingActive.id, existingActive as TranslatorSession);
+          room.status = 'live';
+          room.updated_at = now;
+          store.translationRooms.set(roomId, room);
+          return existingActive as TranslatorSession;
+        }
+
+        const session: TranslatorSession = {
+          id: randomUUID(),
+          translation_room_id: roomId,
+          translator_id: translatorId,
+          status: 'live',
+          started_at: now,
+          duration_seconds: 0,
+          created_at: now,
+        };
+        store.translatorSessions.set(session.id, session);
+
         await admin.from('translator_sessions').insert({
           id: session.id,
           translation_room_id: session.translation_room_id,
@@ -671,8 +691,25 @@ export const Repository = {
 
         await admin.from('translation_rooms').update({ status: 'live', updated_at: now }).eq('id', roomId);
         await admin.from('events').update({ status: 'live', updated_at: now }).eq('id', room.event_id).eq('status', 'scheduled');
+
+        room.status = 'live';
+        room.updated_at = now;
+        store.translationRooms.set(roomId, room);
+        return session;
       }
     }
+
+    const session: TranslatorSession = {
+      id: randomUUID(),
+      translation_room_id: roomId,
+      translator_id: translatorId,
+      status: 'live',
+      started_at: now,
+      duration_seconds: 0,
+      created_at: now,
+    };
+    store.translatorSessions.set(session.id, session);
+
 
     // Update room status
     room.status = 'live';
@@ -872,17 +909,68 @@ export const Repository = {
 
   // AUDIENCE LISTENERS
   async registerAudienceJoin(roomId: string, sessionKey: string, meta?: { ip?: string; ua?: string }): Promise<number> {
-    let room = store.translationRooms.get(roomId);
-    if (!room && isSupabaseConfigured()) {
+    const now = new Date().toISOString();
+
+    if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
       if (admin) {
-        const { data } = await admin.from('translation_rooms').select('*').eq('id', roomId).single();
-        if (data) {
-          room = data as TranslationRoom;
+        // 1. Close any older active session for this sessionKey in a different room (e.g. if switched channel)
+        await admin
+          .from('audience_sessions')
+          .update({ left_at: now })
+          .eq('session_key', sessionKey)
+          .neq('translation_room_id', roomId)
+          .is('left_at', null);
+
+        // 2. Check if already active in this room
+        const { data: existing } = await admin
+          .from('audience_sessions')
+          .select('id')
+          .eq('translation_room_id', roomId)
+          .eq('session_key', sessionKey)
+          .is('left_at', null)
+          .limit(1);
+
+        if (!existing || existing.length === 0) {
+          await admin.from('audience_sessions').insert({
+            id: randomUUID(),
+            translation_room_id: roomId,
+            session_key: sessionKey,
+            joined_at: now,
+            ip_hash: meta?.ip ? meta.ip.slice(0, 10) : null,
+            user_agent: meta?.ua || null,
+            created_at: now,
+          });
+        }
+
+        // 3. Count exact active listeners for this room
+        const { count: activeCount } = await admin
+          .from('audience_sessions')
+          .select('*', { count: 'exact', head: true })
+          .eq('translation_room_id', roomId)
+          .is('left_at', null);
+
+        const count = Math.max(1, activeCount || 1);
+
+        // 4. Update translation_rooms.active_listener_count in Supabase
+        await admin
+          .from('translation_rooms')
+          .update({ active_listener_count: count, updated_at: now })
+          .eq('id', roomId);
+
+        // Update local memory store
+        let room = store.translationRooms.get(roomId);
+        if (room) {
+          room.active_listener_count = count;
+          room.updated_at = now;
           store.translationRooms.set(roomId, room);
         }
+
+        return count;
       }
     }
+
+    let room = store.translationRooms.get(roomId);
     if (!room) return 0;
 
     const existing = Array.from(store.audienceSessions.values()).find(
@@ -894,10 +982,10 @@ export const Repository = {
         id: randomUUID(),
         translation_room_id: roomId,
         session_key: sessionKey,
-        joined_at: new Date().toISOString(),
+        joined_at: now,
         ip_hash: meta?.ip ? meta.ip.slice(0, 10) : undefined,
         user_agent: meta?.ua,
-        created_at: new Date().toISOString(),
+        created_at: now,
       };
       store.audienceSessions.set(audSession.id, audSession);
     }
@@ -907,24 +995,50 @@ export const Repository = {
     ).length;
 
     room.active_listener_count = count;
-    room.updated_at = new Date().toISOString();
+    room.updated_at = now;
     store.translationRooms.set(roomId, room);
 
     return count;
   },
 
   async registerAudienceLeave(roomId: string, sessionKey: string): Promise<number> {
-    let room = store.translationRooms.get(roomId);
-    if (!room && isSupabaseConfigured()) {
+    const now = new Date().toISOString();
+
+    if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
       if (admin) {
-        const { data } = await admin.from('translation_rooms').select('*').eq('id', roomId).single();
-        if (data) {
-          room = data as TranslationRoom;
+        await admin
+          .from('audience_sessions')
+          .update({ left_at: now })
+          .eq('translation_room_id', roomId)
+          .eq('session_key', sessionKey)
+          .is('left_at', null);
+
+        const { count: activeCount } = await admin
+          .from('audience_sessions')
+          .select('*', { count: 'exact', head: true })
+          .eq('translation_room_id', roomId)
+          .is('left_at', null);
+
+        const count = Math.max(0, activeCount || 0);
+
+        await admin
+          .from('translation_rooms')
+          .update({ active_listener_count: count, updated_at: now })
+          .eq('id', roomId);
+
+        let room = store.translationRooms.get(roomId);
+        if (room) {
+          room.active_listener_count = count;
+          room.updated_at = now;
           store.translationRooms.set(roomId, room);
         }
+
+        return count;
       }
     }
+
+    let room = store.translationRooms.get(roomId);
     if (!room) return 0;
 
     const audSession = Array.from(store.audienceSessions.values()).find(
@@ -932,7 +1046,7 @@ export const Repository = {
     );
 
     if (audSession) {
-      audSession.left_at = new Date().toISOString();
+      audSession.left_at = now;
       store.audienceSessions.set(audSession.id, audSession);
     }
 
@@ -941,13 +1055,90 @@ export const Repository = {
     ).length;
 
     room.active_listener_count = count;
-    room.updated_at = new Date().toISOString();
+    room.updated_at = now;
     store.translationRooms.set(roomId, room);
 
     return count;
   },
 
+  async registerAudienceHeartbeat(roomId: string, sessionKey: string): Promise<number> {
+    const now = new Date().toISOString();
+
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        // Ensure session exists and is active
+        const { data: existing } = await admin
+          .from('audience_sessions')
+          .select('id')
+          .eq('translation_room_id', roomId)
+          .eq('session_key', sessionKey)
+          .is('left_at', null)
+          .limit(1);
+
+        if (!existing || existing.length === 0) {
+          await admin.from('audience_sessions').insert({
+            id: randomUUID(),
+            translation_room_id: roomId,
+            session_key: sessionKey,
+            joined_at: now,
+            created_at: now,
+          });
+        }
+
+        // Clean up stale sessions that haven't left and joined > 3 hours ago
+        const staleThreshold = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+        await admin
+          .from('audience_sessions')
+          .update({ left_at: now })
+          .eq('translation_room_id', roomId)
+          .is('left_at', null)
+          .lt('joined_at', staleThreshold);
+
+        const { count: activeCount } = await admin
+          .from('audience_sessions')
+          .select('*', { count: 'exact', head: true })
+          .eq('translation_room_id', roomId)
+          .is('left_at', null);
+
+        const count = Math.max(0, activeCount || 0);
+
+        await admin
+          .from('translation_rooms')
+          .update({ active_listener_count: count, updated_at: now })
+          .eq('id', roomId);
+
+        return count;
+      }
+    }
+
+    return this.getActiveListenerCount(roomId);
+  },
+
   async getActiveListenerCount(roomId: string): Promise<number> {
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data: room } = await admin
+          .from('translation_rooms')
+          .select('active_listener_count')
+          .eq('id', roomId)
+          .maybeSingle();
+
+        if (room && typeof room.active_listener_count === 'number') {
+          return room.active_listener_count;
+        }
+
+        const { count: activeCount } = await admin
+          .from('audience_sessions')
+          .select('*', { count: 'exact', head: true })
+          .eq('translation_room_id', roomId)
+          .is('left_at', null);
+
+        return activeCount || 0;
+      }
+    }
+
     return Array.from(store.audienceSessions.values()).filter(
       s => s.translation_room_id === roomId && !s.left_at
     ).length;
@@ -960,32 +1151,94 @@ export const Repository = {
     remainingMinutes: number;
     isLimitExceeded: boolean;
     planName: string;
+    liveMinutes: number;
+    audienceListeningMinutes: number;
   }> {
     const org = await this.getOrganization(organizationId);
     const plan = org?.plan_id ? store.plans.get(org.plan_id) : Array.from(store.plans.values())[0];
     const quotaMinutes = plan?.monthly_minute_quota || 120;
 
     let records = Array.from(store.usageRecords.values()).filter(r => r.organization_id === organizationId);
+    let liveMinutes = 0;
+    let audienceListeningMinutes = 0;
+
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
       if (admin) {
+        // 1. Fetch completed usage records
         const { data } = await admin.from('usage_records').select('*').eq('organization_id', organizationId);
         if (data && data.length > 0) {
           records = data as UsageRecord[];
         }
+
+        // 2. Calculate active live broadcasting minutes
+        const { data: orgEvents } = await admin.from('events').select('id').eq('organization_id', organizationId);
+        const eventIds = (orgEvents || []).map((e: any) => e.id);
+
+        if (eventIds.length > 0) {
+          const { data: orgRooms } = await admin.from('translation_rooms').select('id').in('event_id', eventIds);
+          const roomIds = (orgRooms || []).map((r: any) => r.id);
+
+          if (roomIds.length > 0) {
+            // Check active live translator sessions
+            const { data: activeSessions } = await admin
+              .from('translator_sessions')
+              .select('started_at')
+              .in('translation_room_id', roomIds)
+              .eq('status', 'live');
+
+            if (activeSessions && activeSessions.length > 0) {
+              const now = Date.now();
+              for (const s of activeSessions) {
+                if (s.started_at) {
+                  const elapsedSec = Math.max(0, Math.floor((now - new Date(s.started_at).getTime()) / 1000));
+                  // Only count if within last 12 hours
+                  if (elapsedSec < 12 * 3600) {
+                    liveMinutes += elapsedSec / 60;
+                  }
+                }
+              }
+            }
+
+            // 3. Calculate audience listening duration
+            const { data: audSessions } = await admin
+              .from('audience_sessions')
+              .select('joined_at, left_at')
+              .in('translation_room_id', roomIds);
+
+            if (audSessions && audSessions.length > 0) {
+              const now = Date.now();
+              let totalAudienceSecs = 0;
+              for (const a of audSessions) {
+                if (a.joined_at) {
+                  const start = new Date(a.joined_at).getTime();
+                  const end = a.left_at ? new Date(a.left_at).getTime() : now;
+                  const dur = Math.max(0, Math.floor((end - start) / 1000));
+                  if (dur < 24 * 3600) {
+                    totalAudienceSecs += dur;
+                  }
+                }
+              }
+              audienceListeningMinutes = Number((totalAudienceSecs / 60).toFixed(2));
+            }
+          }
+        }
       }
     }
 
-    const usedMinutes = records.reduce((acc, r) => acc + Number(r.minutes_used), 0);
-    const remainingMinutes = Math.max(0, Number((quotaMinutes - usedMinutes).toFixed(2)));
-    const isLimitExceeded = usedMinutes >= quotaMinutes;
+    const recordedMinutes = records.reduce((acc, r) => acc + Number(r.minutes_used), 0);
+    const totalUsed = Number((recordedMinutes + liveMinutes).toFixed(2));
+    const remainingMinutes = Math.max(0, Number((quotaMinutes - totalUsed).toFixed(2)));
+    const isLimitExceeded = totalUsed >= quotaMinutes;
 
     return {
-      usedMinutes: Number(usedMinutes.toFixed(2)),
+      usedMinutes: totalUsed,
       quotaMinutes,
       remainingMinutes,
       isLimitExceeded,
       planName: plan?.name || 'Free',
+      liveMinutes: Number(liveMinutes.toFixed(2)),
+      audienceListeningMinutes,
     };
   },
 
@@ -1019,7 +1272,7 @@ export const Repository = {
 
     const rooms = events.flatMap((e) => e.rooms || []);
     const liveRooms = rooms.filter((r) => r.status === 'live');
-    const totalLiveListeners = liveRooms.reduce((acc, r) => acc + (r.active_listener_count || 0), 0);
+    const totalLiveListeners = rooms.reduce((acc, r) => acc + (r.active_listener_count || 0), 0);
 
     const usage = await this.getOrganizationUsage(organizationId);
 
@@ -1035,8 +1288,11 @@ export const Repository = {
       remainingMinutes: usage.remainingMinutes,
       isLimitExceeded: usage.isLimitExceeded,
       planName: usage.planName,
+      audienceListeningMinutes: usage.audienceListeningMinutes,
+      liveMinutes: usage.liveMinutes,
     };
   },
+
 
   // 1. MANAGE ORGANIZATION
   async updateOrganization(orgId: string, updates: { name?: string; slug?: string }): Promise<Organization | null> {
