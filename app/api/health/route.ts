@@ -21,6 +21,7 @@ export async function GET() {
         connected: dbHealth.connected,
         status: dbHealth.message,
         storageMode: dbHealth.connected ? 'supabase-postgresql' : 'resilient-in-memory-engine',
+        debug: (dbHealth as any).debug,
       },
       livekit: {
         configured: liveKitConfig.isConfigured,
