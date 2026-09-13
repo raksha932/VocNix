@@ -163,6 +163,11 @@ export default function AudienceListenPage() {
       if (typeof window !== 'undefined' && window.location.hostname === 'localhost' && resolvedWsUrl.includes('127.0.0.1')) {
         resolvedWsUrl = resolvedWsUrl.replace('127.0.0.1', 'localhost');
       }
+      if (!resolvedWsUrl || resolvedWsUrl.includes('•') || (!resolvedWsUrl.startsWith('ws://') && !resolvedWsUrl.startsWith('wss://'))) {
+        throw new Error(
+          `Invalid LiveKit URL: "${resolvedWsUrl}". Make sure you copy the real WebSocket URL (e.g. wss://<project>.livekit.cloud) in your Vercel Environment Variables, not masked bullet points.`
+        );
+      }
       await audioServiceRef.current?.connectAudience({
         wsUrl: resolvedWsUrl,
         token: data.token,

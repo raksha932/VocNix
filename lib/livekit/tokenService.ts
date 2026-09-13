@@ -12,16 +12,22 @@ function cleanEnv(val: string | undefined): string {
 }
 
 export function getLiveKitConfig(): LiveKitConfig {
-  const url = cleanEnv(process.env.LIVEKIT_URL || process.env.NEXT_PUBLIC_LIVEKIT_URL);
+  let url = cleanEnv(process.env.LIVEKIT_URL || process.env.NEXT_PUBLIC_LIVEKIT_URL);
   const apiKey = cleanEnv(process.env.LIVEKIT_API_KEY);
   const apiSecret = cleanEnv(process.env.LIVEKIT_API_SECRET);
+
+  if (url && !url.startsWith('ws://') && !url.startsWith('wss://') && !url.includes('•')) {
+    url = `wss://${url.replace(/^https?:\/\//, '')}`;
+  }
 
   const isConfigured = Boolean(
     url &&
     apiKey &&
     apiSecret &&
     apiKey !== 'devkey-placeholder' &&
-    apiSecret !== 'secret-placeholder'
+    apiSecret !== 'secret-placeholder' &&
+    !url.includes('•') &&
+    (url.startsWith('ws://') || url.startsWith('wss://'))
   );
 
   return {
