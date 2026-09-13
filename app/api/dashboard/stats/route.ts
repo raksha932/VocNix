@@ -15,7 +15,6 @@ export async function GET(req: NextRequest) {
     const org = await Repository.getDefaultOrganization();
     const stats = await Repository.getDashboardStats(org.id);
     const logs = await Repository.getActivityLogs(org.id, 10);
-    const events = await Repository.getEvents(org.id);
 
     return NextResponse.json(
       {
@@ -26,7 +25,6 @@ export async function GET(req: NextRequest) {
           slug: org.slug,
         },
         stats,
-        recentEvents: events.slice(0, 5),
         activityLogs: logs,
       },
       { headers: NO_CACHE_HEADERS }

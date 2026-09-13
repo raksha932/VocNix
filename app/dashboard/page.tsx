@@ -46,6 +46,7 @@ const COMMON_LANGUAGES = [
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<any>(null);
+  const [liveElapsedSec, setLiveElapsedSec] = useState<number>(0);
   const [events, setEvents] = useState<any[]>([]);
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
   const [orgData, setOrgData] = useState<any>(null);
@@ -109,35 +110,57 @@ export default function DashboardPage() {
     const reqId = ++requestIdRef.current;
     try {
       setError(null);
-      const [statsRes, eventsRes, orgRes] = await Promise.all([
+      const [statsResult, eventsResult, orgResult] = await Promise.allSettled([
         fetch('/api/dashboard/stats', { cache: 'no-store' }),
         fetch('/api/events?all=true', { cache: 'no-store' }),
         fetch('/api/organization', { cache: 'no-store' }),
       ]);
 
-      const statsData = await statsRes.json();
-      const eventsData = await eventsRes.json();
-      const orgDataRes = await orgRes.json();
-
-      // Guard: Discard if a newer request was dispatched
       if (reqId !== requestIdRef.current) return;
 
-      if (statsData.success) {
-        setStats(statsData.stats);
-        setActivityLogs(statsData.activityLogs || []);
+      if (statsResult.status === 'fulfilled') {
+        const statsData = await statsResult.value.json();
+        if (statsData.success) {
+          setStats(statsData.stats);
+          setActivityLogs(statsData.activityLogs || []);
+
+          // Instantly sync individual room listener counts to event cards
+          if (statsData.stats?.roomListenerCounts) {
+            setEvents((prev) =>
+              prev.map((ev) => ({
+                ...ev,
+                rooms: ev.rooms?.map((r: any) => ({
+                  ...r,
+                  active_listener_count:
+                    statsData.stats.roomListenerCounts[r.id] !== undefined
+                      ? statsData.stats.roomListenerCounts[r.id]
+                      : (r.active_listener_count || 0),
+                })),
+              }))
+            );
+          }
+        }
       }
-      if (eventsData.success) {
-        setEvents(eventsData.events || []);
+
+      if (eventsResult.status === 'fulfilled') {
+        const eventsData = await eventsResult.value.json();
+        if (eventsData.success) {
+          setEvents(eventsData.events || []);
+        }
       }
-      if (orgDataRes.success) {
-        setOrgData(orgDataRes.organization);
-        setOrgName(orgDataRes.organization.name);
-        setOrgSlug(orgDataRes.organization.slug);
+
+      if (orgResult.status === 'fulfilled') {
+        const orgDataRes = await orgResult.value.json();
+        if (orgDataRes.success) {
+          setOrgData(orgDataRes.organization);
+          setOrgName(orgDataRes.organization.name);
+          setOrgSlug(orgDataRes.organization.slug);
+        }
       }
+
       setLoading(false);
     } catch (err: any) {
       if (reqId !== requestIdRef.current) return;
-      setError(err.message || 'Failed to fetch dashboard data');
       setLoading(false);
     }
   };
@@ -163,11 +186,29 @@ export default function DashboardPage() {
     } catch {}
   };
 
+  // Real-time authoritative live broadcast ticker
+  useEffect(() => {
+    if (!stats?.isBroadcasting || !stats?.activeBroadcastStartedAt) {
+      setLiveElapsedSec(0);
+      return;
+    }
+
+    const startMs = new Date(stats.activeBroadcastStartedAt).getTime();
+    const updateTick = () => {
+      const elapsed = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+      setLiveElapsedSec(elapsed);
+    };
+
+    updateTick();
+    const ticker = setInterval(updateTick, 1000);
+    return () => clearInterval(ticker);
+  }, [stats?.isBroadcasting, stats?.activeBroadcastStartedAt]);
+
   useEffect(() => {
     fetchDashboardData();
     fetchTranslators();
     fetchBilling();
-    const interval = setInterval(fetchDashboardData, 8000);
+    const interval = setInterval(fetchDashboardData, 2500);
     return () => clearInterval(interval);
   }, []);
 
@@ -450,7 +491,25 @@ export default function DashboardPage() {
     setTimeout(() => setCopiedToken(null), 2000);
   };
 
-  const quotaPercent = stats ? Math.min(100, Math.round((stats.usedMinutes / stats.quotaMinutes) * 100)) : 0;
+  const currentLiveMinutes = liveElapsedSec > 0
+    ? Number((liveElapsedSec / 60).toFixed(1))
+    : (stats?.liveMinutes || 0);
+
+  const completedRecordedMinutes = Math.max(0, (stats?.usedMinutes || 0) - (stats?.liveMinutes || 0));
+  const displayUsedMinutes = stats?.isBroadcasting
+    ? Number((completedRecordedMinutes + currentLiveMinutes).toFixed(1))
+    : (stats?.usedMinutes || 0);
+
+  const formatLiveDuration = (totalSec: number) => {
+    if (totalSec < 60) return `${totalSec}s`;
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m}m ${s.toString().padStart(2, '0')}s`;
+  };
+
+  const quotaPercent = stats && stats.quotaMinutes
+    ? Math.min(100, Math.round((displayUsedMinutes / stats.quotaMinutes) * 100))
+    : 0;
 
   if (loading) {
     return (
@@ -572,8 +631,14 @@ export default function DashboardPage() {
             <span>Connected Listeners</span>
             <Users className="w-4 h-4 text-purple-400" />
           </div>
-          <div className="text-3xl font-black text-white">{stats?.totalLiveListeners || 0}</div>
-          <div className="text-xs text-slate-500">Real WebRTC subscribers</div>
+          <div className="text-3xl font-black text-white">
+            {stats?.totalLiveListeners || 0}
+          </div>
+          <div className="text-xs text-slate-500">
+            {stats?.totalLiveListeners
+              ? `${stats.totalLiveListeners} active WebRTC listener${stats.totalLiveListeners > 1 ? 's' : ''}`
+              : 'Real WebRTC subscribers'}
+          </div>
         </div>
 
         {/* Usage & Quota */}
@@ -583,7 +648,7 @@ export default function DashboardPage() {
             <Clock className="w-4 h-4 text-amber-400" />
           </div>
           <div className="text-3xl font-black text-white">
-            {stats?.usedMinutes || 0}
+            {displayUsedMinutes}
             <span className="text-sm font-normal text-slate-400"> / {stats?.quotaMinutes || 120}m</span>
           </div>
           <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
@@ -593,7 +658,14 @@ export default function DashboardPage() {
             />
           </div>
           <div className="text-[11px] text-slate-400 flex items-center justify-between pt-0.5">
-            <span>Broadcast: {stats?.liveMinutes ? `${stats.liveMinutes}m active` : 'Idle'}</span>
+            <span>
+              Broadcast:{' '}
+              {stats?.isBroadcasting
+                ? `${formatLiveDuration(liveElapsedSec || Math.round((stats?.liveMinutes || 0) * 60))} active`
+                : stats?.liveMinutes
+                ? `${stats.liveMinutes}m active`
+                : 'Idle'}
+            </span>
             <span>Audience: {stats?.audienceListeningMinutes || 0}m</span>
           </div>
         </div>
@@ -848,7 +920,9 @@ export default function DashboardPage() {
 
                               <div className="flex items-center justify-between text-xs text-slate-400">
                                 <span>Listeners:</span>
-                                <strong className="text-slate-200">{room.active_listener_count || 0}</strong>
+                                <strong className={room.active_listener_count > 0 ? "text-emerald-400 font-bold" : "text-slate-200"}>
+                                  {room.active_listener_count || 0}
+                                </strong>
                               </div>
 
                               <div className="flex items-center space-x-2 pt-1 border-t border-slate-900">

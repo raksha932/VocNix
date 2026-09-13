@@ -178,6 +178,37 @@ export default function TranslatorRoomPage() {
     return () => clearInterval(interval);
   }, [roomData?.id]);
 
+  // Periodic session heartbeat while live to keep backend synchronized
+  useEffect(() => {
+    if (!sessionId || broadcastState !== 'live') return;
+    const interval = setInterval(() => {
+      fetch(`/api/sessions/${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'resume' }),
+      }).catch(() => {});
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [sessionId, broadcastState]);
+
+  // Handle browser tab close / pagehide cleanup
+  useEffect(() => {
+    const handleLeave = () => {
+      if (sessionId && broadcastState === 'live') {
+        const payload = JSON.stringify({ action: 'pause' });
+        if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+          navigator.sendBeacon(`/api/sessions/${sessionId}`, new Blob([payload], { type: 'application/json' }));
+        }
+      }
+    };
+    window.addEventListener('beforeunload', handleLeave);
+    window.addEventListener('pagehide', handleLeave);
+    return () => {
+      window.removeEventListener('beforeunload', handleLeave);
+      window.removeEventListener('pagehide', handleLeave);
+    };
+  }, [sessionId, broadcastState]);
+
 
   // ==========================================================
   // TRANSLATOR CONTROLS
@@ -205,6 +236,13 @@ export default function TranslatorRoomPage() {
         audioDeviceId: selectedDeviceId || undefined,
       });
       setBroadcastState('live');
+      if (sessionId) {
+        fetch(`/api/sessions/${sessionId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'resume' }),
+        }).catch(() => {});
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to access microphone or connect to LiveKit');
     }

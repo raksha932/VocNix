@@ -662,6 +662,8 @@ export const Repository = {
 
         if (existingActive) {
           store.translatorSessions.set(existingActive.id, existingActive as TranslatorSession);
+          await admin.from('translation_rooms').update({ status: 'live', updated_at: now }).eq('id', roomId);
+          await admin.from('events').update({ status: 'live', updated_at: now }).eq('id', room.event_id);
           room.status = 'live';
           room.updated_at = now;
           store.translationRooms.set(roomId, room);
@@ -1145,7 +1147,7 @@ export const Repository = {
   },
 
   // USAGE & BILLING ENFORCEMENT
-  async getOrganizationUsage(organizationId: string): Promise<{
+  async getOrganizationUsage(organizationId: string, precomputedRoomIds?: string[]): Promise<{
     usedMinutes: number;
     quotaMinutes: number;
     remainingMinutes: number;
@@ -1153,6 +1155,8 @@ export const Repository = {
     planName: string;
     liveMinutes: number;
     audienceListeningMinutes: number;
+    isBroadcasting: boolean;
+    activeBroadcastStartedAt: string | null;
   }> {
     const org = await this.getOrganization(organizationId);
     const plan = org?.plan_id ? store.plans.get(org.plan_id) : Array.from(store.plans.values())[0];
@@ -1161,6 +1165,8 @@ export const Repository = {
     let records = Array.from(store.usageRecords.values()).filter(r => r.organization_id === organizationId);
     let liveMinutes = 0;
     let audienceListeningMinutes = 0;
+    let isBroadcasting = false;
+    let activeBroadcastStartedAt: string | null = null;
 
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
@@ -1171,55 +1177,84 @@ export const Repository = {
           records = data as UsageRecord[];
         }
 
-        // 2. Calculate active live broadcasting minutes
-        const { data: orgEvents } = await admin.from('events').select('id').eq('organization_id', organizationId);
-        const eventIds = (orgEvents || []).map((e: any) => e.id);
+        // 2. Resolve room IDs
+        let roomIds = precomputedRoomIds;
+        if (!roomIds || roomIds.length === 0) {
+          const { data: orgEvents } = await admin.from('events').select('id').eq('organization_id', organizationId);
+          const eventIds = (orgEvents || []).map((e: any) => e.id);
 
-        if (eventIds.length > 0) {
-          const { data: orgRooms } = await admin.from('translation_rooms').select('id').in('event_id', eventIds);
-          const roomIds = (orgRooms || []).map((r: any) => r.id);
+          if (eventIds.length > 0) {
+            const { data: orgRooms } = await admin.from('translation_rooms').select('id').in('event_id', eventIds);
+            roomIds = (orgRooms || []).map((r: any) => r.id);
+          }
+        }
 
-          if (roomIds.length > 0) {
-            // Check active live translator sessions
-            const { data: activeSessions } = await admin
-              .from('translator_sessions')
-              .select('started_at')
-              .in('translation_room_id', roomIds)
-              .eq('status', 'live');
+        if (roomIds && roomIds.length > 0) {
+          // Check active live translator sessions
+          const { data: activeSessions } = await admin
+            .from('translator_sessions')
+            .select('started_at')
+            .in('translation_room_id', roomIds)
+            .eq('status', 'live');
 
-            if (activeSessions && activeSessions.length > 0) {
-              const now = Date.now();
-              for (const s of activeSessions) {
-                if (s.started_at) {
-                  const elapsedSec = Math.max(0, Math.floor((now - new Date(s.started_at).getTime()) / 1000));
-                  // Only count if within last 12 hours
-                  if (elapsedSec < 12 * 3600) {
-                    liveMinutes += elapsedSec / 60;
-                  }
+          if (activeSessions && activeSessions.length > 0) {
+            isBroadcasting = true;
+            const now = Date.now();
+            for (const s of activeSessions) {
+              if (s.started_at) {
+                const sTime = new Date(s.started_at).getTime();
+                if (!activeBroadcastStartedAt || sTime < new Date(activeBroadcastStartedAt).getTime()) {
+                  activeBroadcastStartedAt = s.started_at;
+                }
+                const elapsedSec = Math.max(0, Math.floor((now - sTime) / 1000));
+                // Only count if within last 12 hours
+                if (elapsedSec < 12 * 3600) {
+                  liveMinutes += elapsedSec / 60;
                 }
               }
             }
+          }
 
-            // 3. Calculate audience listening duration
-            const { data: audSessions } = await admin
-              .from('audience_sessions')
-              .select('joined_at, left_at')
-              .in('translation_room_id', roomIds);
+          // 3. Calculate audience listening duration
+          const { data: audSessions } = await admin
+            .from('audience_sessions')
+            .select('joined_at, left_at')
+            .in('translation_room_id', roomIds);
 
-            if (audSessions && audSessions.length > 0) {
-              const now = Date.now();
-              let totalAudienceSecs = 0;
-              for (const a of audSessions) {
-                if (a.joined_at) {
-                  const start = new Date(a.joined_at).getTime();
-                  const end = a.left_at ? new Date(a.left_at).getTime() : now;
-                  const dur = Math.max(0, Math.floor((end - start) / 1000));
-                  if (dur < 24 * 3600) {
-                    totalAudienceSecs += dur;
-                  }
+          if (audSessions && audSessions.length > 0) {
+            const now = Date.now();
+            let totalAudienceSecs = 0;
+            for (const a of audSessions) {
+              if (a.joined_at) {
+                const start = new Date(a.joined_at).getTime();
+                const end = a.left_at ? new Date(a.left_at).getTime() : now;
+                const dur = Math.max(0, Math.floor((end - start) / 1000));
+                if (dur < 24 * 3600) {
+                  totalAudienceSecs += dur;
                 }
               }
-              audienceListeningMinutes = Number((totalAudienceSecs / 60).toFixed(2));
+            }
+            audienceListeningMinutes = Number((totalAudienceSecs / 60).toFixed(2));
+          }
+        }
+      }
+    }
+
+    // Check memory store fallback
+    const memoryActive = Array.from(store.translatorSessions.values()).filter(s => s.status === 'live');
+    if (memoryActive.length > 0) {
+      isBroadcasting = true;
+      const now = Date.now();
+      for (const s of memoryActive) {
+        if (s.started_at) {
+          const sTime = new Date(s.started_at).getTime();
+          if (!activeBroadcastStartedAt || sTime < new Date(activeBroadcastStartedAt).getTime()) {
+            activeBroadcastStartedAt = s.started_at;
+          }
+          if (liveMinutes === 0) {
+            const elapsedSec = Math.max(0, Math.floor((now - sTime) / 1000));
+            if (elapsedSec < 12 * 3600) {
+              liveMinutes += elapsedSec / 60;
             }
           }
         }
@@ -1239,6 +1274,8 @@ export const Repository = {
       planName: plan?.name || 'Free',
       liveMinutes: Number(liveMinutes.toFixed(2)),
       audienceListeningMinutes,
+      isBroadcasting,
+      activeBroadcastStartedAt,
     };
   },
 
@@ -1272,9 +1309,38 @@ export const Repository = {
 
     const rooms = events.flatMap((e) => e.rooms || []);
     const liveRooms = rooms.filter((r) => r.status === 'live');
-    const totalLiveListeners = rooms.reduce((acc, r) => acc + (r.active_listener_count || 0), 0);
+    const roomIds = rooms.map((r) => r.id);
 
-    const usage = await this.getOrganizationUsage(organizationId);
+    // Map each room's active listener count
+    const roomListenerCounts: Record<string, number> = {};
+    for (const r of rooms) {
+      roomListenerCounts[r.id] = r.active_listener_count || 0;
+    }
+
+    let totalLiveListeners = rooms.reduce((acc, r) => acc + (r.active_listener_count || 0), 0);
+
+    // Authoritative check against audience_sessions in Supabase
+    if (isSupabaseConfigured() && roomIds.length > 0) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        try {
+          const { count: exactAudienceCount } = await admin
+            .from('audience_sessions')
+            .select('*', { count: 'exact', head: true })
+            .in('translation_room_id', roomIds)
+            .is('left_at', null);
+
+          if (typeof exactAudienceCount === 'number' && exactAudienceCount > totalLiveListeners) {
+            totalLiveListeners = exactAudienceCount;
+          }
+        } catch {}
+      }
+    }
+
+    const usage = await this.getOrganizationUsage(organizationId, roomIds);
+
+    const isBroadcasting = usage.isBroadcasting || liveRooms.length > 0 || activeEvents.length > 0;
+    const activeBroadcastStartedAt = usage.activeBroadcastStartedAt || (liveRooms.length > 0 ? liveRooms[0].updated_at : null) || (activeEvents.length > 0 ? activeEvents[0].updated_at : null);
 
     return {
       totalEvents: events.length,
@@ -1290,6 +1356,9 @@ export const Repository = {
       planName: usage.planName,
       audienceListeningMinutes: usage.audienceListeningMinutes,
       liveMinutes: usage.liveMinutes,
+      isBroadcasting,
+      activeBroadcastStartedAt,
+      roomListenerCounts,
     };
   },
 
