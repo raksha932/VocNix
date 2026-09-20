@@ -16,8 +16,12 @@ import {
   CheckCircle,
   Globe,
   Settings,
+  Download,
+  Disc,
+  RotateCcw,
 } from 'lucide-react';
 import { AudioService, AudioConnectionStatus } from '@/lib/audio/AudioService';
+import { Mp3Recorder, RecordingState, Mp3RecordingResult } from '@/lib/audio/mp3Recorder';
 
 export default function TranslatorRoomPage() {
   const params = useParams();
@@ -50,7 +54,14 @@ export default function TranslatorRoomPage() {
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
 
+  // Audio Recording (MP3) state
+  const [recordingState, setRecordingState] = useState<RecordingState>('idle');
+  const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
+  const [recordingResult, setRecordingResult] = useState<Mp3RecordingResult | null>(null);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
+
   const audioServiceRef = useRef<AudioService | null>(null);
+  const mp3RecorderRef = useRef<Mp3Recorder | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Initialize AudioService and discover audio inputs
@@ -84,6 +95,7 @@ export default function TranslatorRoomPage() {
     return () => {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
       service.disconnect();
+      mp3RecorderRef.current?.destroy();
     };
   }, []);
 
@@ -304,6 +316,70 @@ export default function TranslatorRoomPage() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // ==========================================================
+  // MP3 AUDIO RECORDING CONTROLS
+  // ==========================================================
+  const handleStartRecording = async () => {
+    try {
+      setRecordingError(null);
+      if (!mp3RecorderRef.current) {
+        mp3RecorderRef.current = new Mp3Recorder({
+          onStateChange: (st) => setRecordingState(st),
+          onTick: (sec) => setRecordingSeconds(sec),
+          onError: (err) => setRecordingError(err.message),
+        });
+      }
+      await mp3RecorderRef.current.start(selectedDeviceId || undefined);
+    } catch (err: any) {
+      setRecordingError(err.message || 'Microphone access denied or not available');
+    }
+  };
+
+  const handlePauseRecording = () => {
+    mp3RecorderRef.current?.pause();
+  };
+
+  const handleResumeRecording = () => {
+    mp3RecorderRef.current?.resume();
+  };
+
+  const handleStopRecording = async () => {
+    if (!mp3RecorderRef.current) return;
+    try {
+      setRecordingError(null);
+      const res = await mp3RecorderRef.current.stop();
+      setRecordingResult(res);
+    } catch (err: any) {
+      setRecordingError(err.message || 'Failed to encode MP3 audio');
+    }
+  };
+
+  const handleDownloadRecording = () => {
+    if (!recordingResult) return;
+    const cleanLang = (roomData?.languageName || 'Speech').replace(/[^a-zA-Z0-9]/g, '_');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `VocNix_${cleanLang}_${timestamp}.mp3`;
+    Mp3Recorder.downloadMp3(recordingResult.url, filename);
+  };
+
+  const handleResetRecording = () => {
+    mp3RecorderRef.current?.destroy();
+    setRecordingResult(null);
+    setRecordingSeconds(0);
+    setRecordingState('idle');
+    setRecordingError(null);
+  };
+
+  const formatRecordTimer = (totalSeconds: number) => {
+    const hrs = Math.floor(totalSeconds / 3600);
+    const mins = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+    if (hrs > 0) {
+      return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   if (loading) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center space-y-4">
@@ -488,6 +564,17 @@ export default function TranslatorRoomPage() {
             </button>
           )}
 
+          {/* Translator Audio Recorder Button */}
+          {recordingState === 'idle' && (
+            <button
+              onClick={handleStartRecording}
+              className="px-8 py-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-base flex items-center space-x-3 transition shadow-lg shadow-rose-600/20"
+            >
+              <span className="w-3 h-3 rounded-full bg-white animate-pulse" />
+              <span>RECORD AUDIO (MP3)</span>
+            </button>
+          )}
+
           {broadcastState === 'live' && (
             <>
               <button
@@ -540,6 +627,128 @@ export default function TranslatorRoomPage() {
             </div>
           )}
         </div>
+
+        {/* Audio Recording Error Alert */}
+        {recordingError && (
+          <div className="p-4 bg-red-950/40 border border-red-500/40 rounded-xl flex items-center justify-between text-sm text-red-200">
+            <div className="flex items-center space-x-2">
+              <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+              <span>{recordingError}</span>
+            </div>
+            <button
+              onClick={() => setRecordingError(null)}
+              className="text-xs text-red-400 hover:text-red-300 underline ml-4"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {/* Active Audio Recording Panel */}
+        {(recordingState === 'recording' || recordingState === 'paused') && (
+          <div className="p-5 rounded-2xl bg-rose-950/30 border border-rose-500/40 space-y-4">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center space-x-3.5">
+                <span
+                  className={`w-4 h-4 rounded-full ${
+                    recordingState === 'recording'
+                      ? 'bg-rose-500 animate-ping'
+                      : 'bg-amber-400'
+                  }`}
+                />
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-rose-300 flex items-center space-x-1.5">
+                    <span>{recordingState === 'recording' ? 'Recording Live Microphone' : 'Recording Paused'}</span>
+                  </div>
+                  <div className="font-mono text-3xl font-black text-white">
+                    {formatRecordTimer(recordingSeconds)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-3">
+                {recordingState === 'recording' ? (
+                  <button
+                    onClick={handlePauseRecording}
+                    className="px-4 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-semibold text-xs border border-amber-500/30 flex items-center space-x-1.5 transition"
+                  >
+                    <Pause className="w-4 h-4" />
+                    <span>Pause</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleResumeRecording}
+                    className="px-4 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-semibold text-xs flex items-center space-x-1.5 transition"
+                  >
+                    <Play className="w-4 h-4 fill-current" />
+                    <span>Resume</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={handleStopRecording}
+                  className="px-6 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center space-x-2 transition shadow-lg shadow-red-600/30"
+                >
+                  <Square className="w-4 h-4 fill-current" />
+                  <span>STOP & SAVE MP3</span>
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-rose-300/70 text-center sm:text-left">
+              Capturing genuine microphone audio in real time. Click Stop when finished to download the MP3.
+            </p>
+          </div>
+        )}
+
+        {/* Encoding in progress */}
+        {recordingState === 'encoding' && (
+          <div className="p-6 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center space-x-3 text-slate-300 text-sm">
+            <div className="w-5 h-5 rounded-full border-2 border-rose-500 border-t-transparent animate-spin" />
+            <span>Encoding live microphone speech to high quality MP3 (128 kbps)...</span>
+          </div>
+        )}
+
+        {/* Ready to Download MP3 Panel */}
+        {recordingState === 'ready' && recordingResult && (
+          <div className="p-5 rounded-2xl bg-slate-950 border border-emerald-500/40 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2 text-emerald-400 font-bold text-sm uppercase tracking-wider">
+                  <CheckCircle className="w-4 h-4" />
+                  <span>Audio Recording Ready</span>
+                </div>
+                <div className="text-xs text-slate-400 font-mono">
+                  Duration: <strong className="text-slate-200">{formatRecordTimer(recordingResult.durationSeconds)}</strong> • Size: <strong className="text-slate-200">{(recordingResult.sizeBytes / (1024 * 1024)).toFixed(2)} MB</strong> • Format: <strong className="text-emerald-400">MP3</strong>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={handleDownloadRecording}
+                  className="px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm flex items-center space-x-2 transition shadow-lg shadow-emerald-500/20"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>DOWNLOAD MP3</span>
+                </button>
+
+                <button
+                  onClick={handleResetRecording}
+                  className="px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs flex items-center space-x-1.5 transition"
+                  title="Start a new recording"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>New Recording</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Audio Preview Player */}
+            <div className="pt-3 border-t border-slate-900 space-y-1.5">
+              <div className="text-xs text-slate-400">Preview recorded audio:</div>
+              <audio controls src={recordingResult.url} className="w-full h-9 rounded-lg" />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
