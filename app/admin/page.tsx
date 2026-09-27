@@ -364,16 +364,6 @@ export default function SuperAdminPage() {
 
                     <td className="text-right">
                       <div className="flex items-center justify-end space-x-2">
-                        {/* Impersonate Organization Admin */}
-                        <Link
-                          href={`/dashboard?impersonate=true&orgId=${org.id}`}
-                          title={`Impersonate ${org.name} Admin without logging in`}
-                          className="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-semibold rounded-lg border border-emerald-500/40 transition flex items-center space-x-1"
-                        >
-                          <UserCheck className="w-3.5 h-3.5" />
-                          <span>Impersonate</span>
-                        </Link>
-
                         {/* Extend Trial */}
                         <button
                           onClick={() => handleExtendTrial(org.id)}
@@ -412,19 +402,6 @@ export default function SuperAdminPage() {
             </tbody>
           </table>
         </div>
-      </div>
-
-      {/* Floating Side Impersonation Tab */}
-      <div className="fixed right-0 top-1/2 -translate-y-1/2 z-40 hidden md:block">
-        <Link
-          href="/dashboard?impersonate=true"
-          title="Direct Impersonation: Open Admin Dashboard without login"
-          className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-3 px-4 rounded-l-2xl shadow-2xl border-y border-l border-emerald-400/40 transition-all hover:pr-5 group"
-        >
-          <UserCheck className="w-4 h-4 group-hover:scale-110 transition-transform" />
-          <span className="tracking-wide">Impersonate</span>
-          <ArrowUpRight className="w-3.5 h-3.5" />
-        </Link>
       </div>
     </div>
   );
