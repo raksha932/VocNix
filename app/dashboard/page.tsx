@@ -55,6 +55,7 @@ export default function DashboardPage() {
 
   // Request sequencing ref to prevent stale in-flight responses from overwriting new state
   const requestIdRef = useRef(0);
+  const isFetchingRef = useRef(false);
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<'events' | 'translators' | 'billing' | 'organization'>('events');
@@ -105,8 +106,11 @@ export default function DashboardPage() {
   const [orgSlug, setOrgSlug] = useState('');
 
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const [isImpersonating, setIsImpersonating] = useState(false);
 
   const fetchDashboardData = async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     const reqId = ++requestIdRef.current;
     try {
       setError(null);
@@ -116,7 +120,10 @@ export default function DashboardPage() {
         fetch('/api/organization', { cache: 'no-store' }),
       ]);
 
-      if (reqId !== requestIdRef.current) return;
+      if (reqId !== requestIdRef.current) {
+        setLoading(false);
+        return;
+      }
 
       if (statsResult.status === 'fulfilled') {
         const statsData = await statsResult.value.json();
@@ -160,7 +167,9 @@ export default function DashboardPage() {
 
       setLoading(false);
     } catch (err: any) {
-      if (reqId !== requestIdRef.current) return;
+      setLoading(false);
+    } finally {
+      isFetchingRef.current = false;
       setLoading(false);
     }
   };
@@ -205,11 +214,49 @@ export default function DashboardPage() {
   }, [stats?.isBroadcasting, stats?.activeBroadcastStartedAt]);
 
   useEffect(() => {
-    fetchDashboardData();
-    fetchTranslators();
-    fetchBilling();
-    const interval = setInterval(fetchDashboardData, 2500);
-    return () => clearInterval(interval);
+    let isMounted = true;
+    let pollTimer: NodeJS.Timeout | null = null;
+
+    if (typeof window !== 'undefined') {
+      const search = new URLSearchParams(window.location.search);
+      if (search.get('impersonate') === 'true') {
+        setIsImpersonating(true);
+      }
+    }
+
+    const scheduleNextPoll = () => {
+      if (!isMounted) return;
+      pollTimer = setTimeout(async () => {
+        if (!isMounted) return;
+        if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+          await fetchDashboardData();
+        }
+        scheduleNextPoll();
+      }, 3500);
+    };
+
+    // Initial load: fetch all data and dismiss loading immediately when done
+    Promise.allSettled([
+      fetchDashboardData(),
+      fetchTranslators(),
+      fetchBilling(),
+    ]).finally(() => {
+      if (isMounted) {
+        setLoading(false);
+        scheduleNextPoll();
+      }
+    });
+
+    // Hard safety timeout: Under no circumstances should user wait more than 2s for console
+    const safetyTimer = setTimeout(() => {
+      if (isMounted) setLoading(false);
+    }, 2000);
+
+    return () => {
+      isMounted = false;
+      if (pollTimer) clearTimeout(pollTimer);
+      clearTimeout(safetyTimer);
+    };
   }, []);
 
   const handleToggleLanguage = (lang: { code: string; name: string }) => {
@@ -522,6 +569,27 @@ export default function DashboardPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      {/* Impersonation Banner if arriving via Impersonate */}
+      {isImpersonating && (
+        <div className="bg-amber-500/15 border border-amber-500/40 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-200 shadow-lg">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 flex-shrink-0">
+              <UserCheck className="w-4 h-4" />
+            </div>
+            <div>
+              <strong className="text-amber-300 font-semibold text-sm">Super Admin Impersonation Active</strong>
+              <p className="text-slate-300">You are accessing the Admin dashboard directly without needing to log in or enter an email ID.</p>
+            </div>
+          </div>
+          <Link
+            href="/admin"
+            className="px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold rounded-xl border border-amber-500/40 transition flex items-center space-x-1.5 self-start sm:self-auto flex-shrink-0"
+          >
+            <span>Exit to Super Admin</span>
+          </Link>
+        </div>
+      )}
+
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
