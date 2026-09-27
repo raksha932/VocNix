@@ -30,6 +30,7 @@ import {
   Filter,
   Eye,
   CheckCircle2,
+  ShieldAlert,
 } from 'lucide-react';
 import QRCodeModal from '@/components/QRCodeModal';
 
@@ -108,6 +109,7 @@ export default function DashboardPage() {
 
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [isImpersonating, setIsImpersonating] = useState(false);
+  const [accessDeniedAlert, setAccessDeniedAlert] = useState(false);
 
   const fetchDashboardData = async () => {
     if (isFetchingRef.current) return;
@@ -222,6 +224,9 @@ export default function DashboardPage() {
       const search = new URLSearchParams(window.location.search);
       if (search.get('impersonate') === 'true') {
         setIsImpersonating(true);
+      }
+      if (search.get('error') === 'access_denied') {
+        setAccessDeniedAlert(true);
       }
     }
 
@@ -622,6 +627,27 @@ export default function DashboardPage() {
           >
             <span>Exit to Super Admin</span>
           </Link>
+        </div>
+      )}
+
+      {/* Access Denied Banner if redirected from Super Admin */}
+      {accessDeniedAlert && (
+        <div className="bg-red-500/15 border border-red-500/40 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-red-200 shadow-lg">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 flex-shrink-0">
+              <ShieldAlert className="w-4 h-4" />
+            </div>
+            <div>
+              <strong className="text-red-300 font-semibold text-sm">Super Admin Access Restricted</strong>
+              <p className="text-slate-300">Your account is granted Organization Admin privileges. You are not authorized to access the Super Admin Command Center.</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setAccessDeniedAlert(false)}
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl border border-slate-700 transition self-start sm:self-auto"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
