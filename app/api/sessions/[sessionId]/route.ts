@@ -41,7 +41,7 @@ export async function PATCH(
         success: true,
         session: result.session,
         usageMinutes: result.usageMinutes,
-        status: 'ended',
+        status: 'idle',
       });
     }
 
@@ -52,4 +52,11 @@ export async function PATCH(
       { status: 500 }
     );
   }
+}
+
+export async function POST(
+  req: NextRequest,
+  ctx: { params: { sessionId: string } }
+) {
+  return PATCH(req, ctx);
 }

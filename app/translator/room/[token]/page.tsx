@@ -206,8 +206,8 @@ export default function TranslatorRoomPage() {
   // Handle browser tab close / pagehide cleanup
   useEffect(() => {
     const handleLeave = () => {
-      if (sessionId && broadcastState === 'live') {
-        const payload = JSON.stringify({ action: 'pause' });
+      if (sessionId) {
+        const payload = JSON.stringify({ action: 'stop' });
         if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
           navigator.sendBeacon(`/api/sessions/${sessionId}`, new Blob([payload], { type: 'application/json' }));
         }
@@ -219,7 +219,7 @@ export default function TranslatorRoomPage() {
       window.removeEventListener('beforeunload', handleLeave);
       window.removeEventListener('pagehide', handleLeave);
     };
-  }, [sessionId, broadcastState]);
+  }, [sessionId]);
 
 
   // ==========================================================

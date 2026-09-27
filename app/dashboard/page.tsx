@@ -236,6 +236,14 @@ export default function DashboardPage() {
       }, 3500);
     };
 
+    const handleWindowFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchDashboardData();
+      }
+    };
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('visibilitychange', handleWindowFocus);
+
     // Initial load: fetch all data and dismiss loading immediately when done
     Promise.allSettled([
       fetchDashboardData(),
@@ -257,6 +265,8 @@ export default function DashboardPage() {
       isMounted = false;
       if (pollTimer) clearTimeout(pollTimer);
       clearTimeout(safetyTimer);
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('visibilitychange', handleWindowFocus);
     };
   }, []);
 
@@ -983,6 +993,7 @@ export default function DashboardPage() {
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                         {event.rooms?.map((room: any) => {
                           const lang = event.languages?.find((l: any) => l.id === room.event_language_id);
+                          const isRoomActive = room.status === 'live' || room.status === 'active';
                           const translatorUrl =
                             typeof window !== 'undefined'
                               ? `${window.location.origin}/translator/room/${room.secure_room_token}`
@@ -1001,13 +1012,14 @@ export default function DashboardPage() {
                                   </span>
                                 </div>
                                 <span
-                                  className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
-                                    room.status === 'live'
-                                      ? 'bg-emerald-500/20 text-emerald-400 animate-pulse'
-                                      : 'bg-slate-800 text-slate-400'
+                                  className={`text-[10px] font-bold px-2 py-0.5 rounded flex items-center space-x-1.5 transition-all ${
+                                    isRoomActive
+                                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse'
+                                      : 'bg-slate-800 text-slate-400 border border-slate-700'
                                   }`}
                                 >
-                                  {room.status}
+                                  <span className={`w-1.5 h-1.5 rounded-full ${isRoomActive ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                                  <span>{isRoomActive ? 'Active' : 'Idle'}</span>
                                 </span>
                               </div>
 
@@ -1022,6 +1034,16 @@ export default function DashboardPage() {
                                 <Link
                                   href={`/translator/room/${room.secure_room_token}`}
                                   target="_blank"
+                                  onClick={() => {
+                                    setEvents((prev) =>
+                                      prev.map((e) => ({
+                                        ...e,
+                                        rooms: e.rooms?.map((r: any) =>
+                                          r.id === room.id ? { ...r, status: 'live' } : r
+                                        ),
+                                      }))
+                                    );
+                                  }}
                                   className="flex-1 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center justify-center space-x-1.5 transition"
                                 >
                                   <Mic className="w-3.5 h-3.5" />

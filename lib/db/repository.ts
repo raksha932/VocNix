@@ -10,6 +10,7 @@ import {
   UsageRecord,
   ActivityLog,
   Plan,
+  RoomStatus,
 } from '@/lib/types/database';
 import { getSupabaseAdmin, isSupabaseConfigured } from './supabase';
 import { randomBytes, randomUUID } from 'crypto';
@@ -394,7 +395,10 @@ export const Repository = {
           const mapped = data.map((e: any) => ({
             ...e,
             languages: e.languages || [],
-            rooms: e.rooms || [],
+            rooms: (e.rooms || []).map((r: any) => ({
+              ...r,
+              status: (r.status === 'live' ? 'live' : 'idle') as RoomStatus,
+            })),
           }));
 
           // Sync into memory store
@@ -428,7 +432,12 @@ export const Repository = {
 
     return events.map((event) => {
       const languages = Array.from(store.eventLanguages.values()).filter((l) => l.event_id === event.id);
-      const rooms = Array.from(store.translationRooms.values()).filter((r) => r.event_id === event.id);
+      const rooms = Array.from(store.translationRooms.values())
+        .filter((r) => r.event_id === event.id)
+        .map((r) => ({
+          ...r,
+          status: (r.status === 'live' ? 'live' : 'idle') as RoomStatus,
+        }));
       return { ...event, languages, rooms };
     });
   },
@@ -451,7 +460,10 @@ export const Repository = {
           return {
             ...data,
             languages: data.languages || [],
-            rooms: data.rooms || [],
+            rooms: (data.rooms || []).map((r: any) => ({
+              ...r,
+              status: (r.status === 'live' ? 'live' : 'idle') as RoomStatus,
+            })),
           } as Event & { languages: EventLanguage[]; rooms: TranslationRoom[] };
         }
       }
@@ -459,7 +471,12 @@ export const Repository = {
     const event = store.events.get(eventId);
     if (!event) return null;
     const languages = Array.from(store.eventLanguages.values()).filter((l) => l.event_id === event.id);
-    const rooms = Array.from(store.translationRooms.values()).filter((r) => r.event_id === event.id);
+    const rooms = Array.from(store.translationRooms.values())
+      .filter((r) => r.event_id === event.id)
+      .map((r) => ({
+        ...r,
+        status: (r.status === 'live' ? 'live' : 'idle') as RoomStatus,
+      }));
     return { ...event, languages, rooms };
   },
 
@@ -481,7 +498,10 @@ export const Repository = {
           return {
             ...data,
             languages: data.languages || [],
-            rooms: data.rooms || [],
+            rooms: (data.rooms || []).map((r: any) => ({
+              ...r,
+              status: (r.status === 'live' ? 'live' : 'idle') as RoomStatus,
+            })),
           } as Event & { languages: EventLanguage[]; rooms: TranslationRoom[] };
         }
       }
@@ -489,7 +509,12 @@ export const Repository = {
     const event = Array.from(store.events.values()).find((e) => e.public_access_token === token);
     if (!event) return null;
     const languages = Array.from(store.eventLanguages.values()).filter((l) => l.event_id === event.id);
-    const rooms = Array.from(store.translationRooms.values()).filter((r) => r.event_id === event.id);
+    const rooms = Array.from(store.translationRooms.values())
+      .filter((r) => r.event_id === event.id)
+      .map((r) => ({
+        ...r,
+        status: (r.status === 'live' ? 'live' : 'idle') as RoomStatus,
+      }));
     return { ...event, languages, rooms };
   },
 
@@ -852,13 +877,13 @@ export const Repository = {
         }).eq('id', sessionId);
 
         if (room) {
-          await admin.from('translation_rooms').update({ status: 'ended', updated_at: now.toISOString() }).eq('id', room.id);
+          await admin.from('translation_rooms').update({ status: 'idle', updated_at: now.toISOString() }).eq('id', room.id);
         }
       }
     }
 
     if (room) {
-      room.status = 'ended';
+      room.status = 'idle';
       room.updated_at = now.toISOString();
       store.translationRooms.set(room.id, room);
 
