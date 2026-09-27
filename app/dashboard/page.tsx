@@ -96,6 +96,7 @@ export default function DashboardPage() {
   const [translatorName, setTranslatorName] = useState('');
   const [translatorEmail, setTranslatorEmail] = useState('');
   const [translatorLangs, setTranslatorLangs] = useState('');
+  const [deletingTranslatorId, setDeletingTranslatorId] = useState<string | null>(null);
 
   // Billing & Invoices State
   const [plans, setPlans] = useState<any[]>([]);
@@ -487,6 +488,30 @@ export default function DashboardPage() {
       }
     } catch (err: any) {
       alert(err.message);
+    }
+  };
+
+  // 5b. DELETE TRANSLATOR
+  const handleDeleteTranslator = async (translatorId: string, translatorName: string) => {
+    if (!window.confirm(`Are you sure you want to delete translator "${translatorName}"?`)) {
+      return;
+    }
+    try {
+      setDeletingTranslatorId(translatorId);
+      const res = await fetch(`/api/translators?id=${translatorId}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTranslators((prev) => prev.filter((t) => t.id !== translatorId));
+        fetchTranslators();
+      } else {
+        alert(data.error || 'Failed to delete translator');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error deleting translator');
+    } finally {
+      setDeletingTranslatorId(null);
     }
   };
 
@@ -1052,9 +1077,20 @@ export default function DashboardPage() {
               <div key={t.id} className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="font-bold text-white text-sm">{t.full_name}</div>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 uppercase">
-                    {t.status}
-                  </span>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 uppercase">
+                      {t.status}
+                    </span>
+                    <button
+                      onClick={() => handleDeleteTranslator(t.id, t.full_name)}
+                      disabled={deletingTranslatorId === t.id}
+                      title={`Delete ${t.full_name}`}
+                      className="px-2 py-0.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 border border-slate-800 hover:border-red-500/30 transition flex items-center space-x-1 text-xs disabled:opacity-50"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span className="text-[11px] font-medium">Delete</span>
+                    </button>
+                  </div>
                 </div>
                 <div className="text-xs text-slate-400">{t.email}</div>
                 <div className="flex items-center space-x-1 text-xs">

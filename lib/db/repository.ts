@@ -1551,6 +1551,15 @@ export const Repository = {
     return translator;
   },
 
+  async deleteTranslator(translatorId: string): Promise<boolean> {
+    const translator = store.translators.get(translatorId);
+    store.translators.delete(translatorId);
+    if (translator) {
+      await this.logActivity(translator.organization_id, 'TRANSLATOR_DELETED', `Deleted translator ${translator.full_name} (${translator.email})`);
+    }
+    return true;
+  },
+
   async assignTranslator(roomId: string, translatorId: string): Promise<TranslatorAssignment> {
     const assignment: TranslatorAssignment = {
       id: randomUUID(),
