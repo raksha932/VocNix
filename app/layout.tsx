@@ -102,7 +102,7 @@ export default async function RootLayout({
               {!session && (
                 <>
                   <Link
-                    href="/login/admin"
+                    href="/admin/login"
                     className="text-slate-300 hover:text-white transition flex items-center space-x-1.5"
                   >
                     <Activity className="w-4 h-4 text-emerald-400" />
@@ -110,7 +110,7 @@ export default async function RootLayout({
                   </Link>
 
                   <Link
-                    href="/login/super-admin"
+                    href="/super-admin/login"
                     className="text-amber-400/90 hover:text-amber-300 transition flex items-center space-x-1.5 font-semibold"
                   >
                     <Lock className="w-3.5 h-3.5 text-amber-400" />

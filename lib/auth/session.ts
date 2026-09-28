@@ -6,6 +6,7 @@ export type UserRole = 'admin' | 'super_admin';
 export interface UserSession {
   userId: string;
   email: string;
+  username?: string;
   name: string;
   avatar?: string;
   role: UserRole;

@@ -11,6 +11,8 @@ import {
   ActivityLog,
   Plan,
   RoomStatus,
+  Profile,
+  UserRole,
 } from '@/lib/types/database';
 import { getSupabaseAdmin, isSupabaseConfigured } from './supabase';
 import { randomBytes, randomUUID } from 'crypto';
@@ -28,6 +30,8 @@ interface DataStore {
   audienceSessions: Map<string, AudienceSession>;
   usageRecords: Map<string, UsageRecord>;
   activityLogs: ActivityLog[];
+  profiles: Map<string, Profile>;
+  passwords: Map<string, string>;
 }
 
 declare global {
@@ -48,7 +52,30 @@ function initMemoryStore(): DataStore {
     audienceSessions: new Map(),
     usageRecords: new Map(),
     activityLogs: [],
+    profiles: new Map(),
+    passwords: new Map(),
   };
+
+  const defaultSuperAdmin: Profile = {
+    id: '00000000-0000-0000-0000-000000000099',
+    username: 'superadmin',
+    email: 'superadmin@vocnix.com',
+    full_name: 'Super Admin',
+    role: 'super_admin',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const defaultAdmin: Profile = {
+    id: '00000000-0000-0000-0000-000000000098',
+    username: 'admin',
+    email: 'admin@vocnix.com',
+    full_name: 'Platform Admin',
+    role: 'admin',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  store.profiles.set(defaultSuperAdmin.id, defaultSuperAdmin);
+  store.profiles.set(defaultAdmin.id, defaultAdmin);
 
   // Seed default plans
   const freePlan: Plan = {
@@ -112,6 +139,12 @@ function initMemoryStore(): DataStore {
 }
 
 const store: DataStore = global.__vocnix_store || initMemoryStore();
+if (!store.passwords) {
+  store.passwords = new Map();
+}
+if (!store.profiles) {
+  store.profiles = new Map();
+}
 if (process.env.NODE_ENV !== 'production') {
   global.__vocnix_store = store;
 }
@@ -1788,5 +1821,153 @@ export const Repository = {
         };
       }),
     };
+  },
+
+  // PROFILES & AUTHENTICATION
+  async getProfileById(userId: string): Promise<Profile | null> {
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data, error } = await admin.from('profiles').select('*').eq('id', userId).single();
+        if (!error && data) {
+          const profile = data as Profile;
+          store.profiles.set(profile.id, profile);
+          return profile;
+        }
+      }
+    }
+    return store.profiles.get(userId) || null;
+  },
+
+  async getProfileByEmail(email: string): Promise<Profile | null> {
+    const cleanEmail = email.trim().toLowerCase();
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data, error } = await admin.from('profiles').select('*').ilike('email', cleanEmail).limit(1).maybeSingle();
+        if (!error && data) {
+          const profile = data as Profile;
+          store.profiles.set(profile.id, profile);
+          return profile;
+        }
+      }
+    }
+    for (const p of store.profiles.values()) {
+      if (p.email.toLowerCase() === cleanEmail) return p;
+    }
+    return null;
+  },
+
+  async getProfileByUsername(username: string): Promise<Profile | null> {
+    const cleanUsername = username.trim().toLowerCase();
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data, error } = await admin.from('profiles').select('*').ilike('username', cleanUsername).limit(1).maybeSingle();
+        if (!error && data) {
+          const profile = data as Profile;
+          store.profiles.set(profile.id, profile);
+          return profile;
+        }
+      }
+    }
+    for (const p of store.profiles.values()) {
+      if (p.username.toLowerCase() === cleanUsername) return p;
+    }
+    return null;
+  },
+
+  async getProfileByIdentifier(identifier: string): Promise<Profile | null> {
+    const clean = identifier.trim().toLowerCase();
+    if (clean.includes('@')) {
+      return this.getProfileByEmail(clean);
+    }
+    return this.getProfileByUsername(clean);
+  },
+
+  async isUsernameAvailable(username: string): Promise<boolean> {
+    const clean = username.trim().toLowerCase();
+    const existing = await this.getProfileByUsername(clean);
+    return !existing;
+  },
+
+  async isEmailRegistered(email: string): Promise<boolean> {
+    const clean = email.trim().toLowerCase();
+    const existing = await this.getProfileByEmail(clean);
+    return !!existing;
+  },
+
+  async createProfile(params: {
+    id: string;
+    username: string;
+    email: string;
+    role?: UserRole;
+    full_name?: string;
+    avatar_url?: string;
+    password?: string;
+  }): Promise<Profile> {
+    const now = new Date().toISOString();
+    const profile: Profile = {
+      id: params.id,
+      username: params.username.trim(),
+      email: params.email.trim().toLowerCase(),
+      role: params.role || 'admin',
+      full_name: params.full_name?.trim() || params.username.trim(),
+      avatar_url: params.avatar_url,
+      created_at: now,
+      updated_at: now,
+    };
+
+    if (params.password) {
+      store.passwords.set(profile.id, params.password);
+    }
+
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { data, error } = await admin
+          .from('profiles')
+          .upsert(profile, { onConflict: 'id' })
+          .select('*')
+          .single();
+        if (!error && data) {
+          const p = data as Profile;
+          store.profiles.set(p.id, p);
+          return p;
+        }
+        if (error) {
+          console.error('[Repository] Error creating profile in Supabase:', error);
+          throw new Error(error.message);
+        }
+      }
+    }
+
+    store.profiles.set(profile.id, profile);
+    return profile;
+  },
+
+  verifyLocalPassword(profileId: string, passwordAttempt: string): boolean {
+    const stored = store.passwords.get(profileId);
+    if (!stored) return true;
+    return stored === passwordAttempt;
+  },
+
+  async hasSuperAdmin(): Promise<boolean> {
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const { count, error } = await admin
+          .from('profiles')
+          .select('*', { count: 'exact', head: true })
+          .eq('role', 'super_admin');
+        if (!error && typeof count === 'number') {
+          return count > 0;
+        }
+      }
+    }
+    for (const p of store.profiles.values()) {
+      if (p.role === 'super_admin') return true;
+    }
+    return false;
   },
 };

@@ -6,11 +6,15 @@ export type OrgStatus = 'active' | 'suspended' | 'delinquent';
 export type TicketPriority = 'low' | 'normal' | 'high' | 'urgent';
 export type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
 
+export type UserRole = 'admin' | 'super_admin';
+
 export interface Profile {
   id: string;
+  username: string;
   email: string;
-  full_name: string;
+  full_name?: string;
   avatar_url?: string;
+  role: UserRole;
   created_at: string;
   updated_at: string;
 }
