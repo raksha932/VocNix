@@ -338,7 +338,7 @@ export default function SuperAdminPage() {
                       >
                         {plans.map((p) => (
                           <option key={p.id} value={p.id}>
-                            {p.name} (${(p.price_cents / 100).toFixed(0)}/mo)
+                            {p.name} ({p.price_label || (p.price_inr !== undefined ? `₹${p.price_inr.toLocaleString('en-IN')}` : `₹${p.price_cents / 100}`)})
                           </option>
                         ))}
                       </select>

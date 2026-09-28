@@ -1164,14 +1164,99 @@ export default function DashboardPage() {
         <div className="space-y-6">
           {/* Subscription Plans */}
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 space-y-6">
-            <div>
-              <h2 className="text-xl font-bold text-white tracking-tight">Subscription Plans & Quotas</h2>
-              <p className="text-xs text-slate-400">Scale your concurrent translation rooms and broadcast quotas</p>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold text-white tracking-tight">Subscription Plans & Event Passes</h2>
+                <p className="text-xs text-slate-400">Scale your live translation duration, listener capacity, and event quotas</p>
+              </div>
+              {stats?.planName && (
+                <div className="inline-flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs">
+                  <span className="text-slate-400">Active Pass:</span>
+                  <span className="font-bold text-emerald-400">{stats.planName}</span>
+                </div>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Desktop Table View (Matches Reference Design) */}
+            <div className="hidden lg:block overflow-hidden border border-slate-800 rounded-2xl bg-slate-950/70">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-800/80 text-xs font-semibold text-slate-400 tracking-wider bg-slate-900/40">
+                    <th className="py-4 px-6">Plan</th>
+                    <th className="py-4 px-6">Price (INR)</th>
+                    <th className="py-4 px-6">Duration & Quotas</th>
+                    <th className="py-4 px-6">Key Capabilities</th>
+                    <th className="py-4 px-6 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 text-sm">
+                  {plans.map((p) => {
+                    const isCurrent = stats?.planName?.toLowerCase().includes(p.slug.toLowerCase()) ||
+                                      stats?.planName?.toLowerCase().includes(p.name.toLowerCase());
+                    return (
+                      <tr
+                        key={p.id}
+                        className={`transition hover:bg-slate-900/40 ${
+                          isCurrent ? 'bg-emerald-500/[0.04]' : ''
+                        }`}
+                      >
+                        <td className="py-5 px-6 font-bold text-white whitespace-nowrap align-top">
+                          <div className="flex items-center space-x-2">
+                            <span>{p.name}</span>
+                            {isCurrent && (
+                              <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                Current
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-5 px-6 font-extrabold text-white text-base align-top whitespace-nowrap">
+                          {p.price_label || (p.price_inr === 0 ? '₹0' : `₹${p.price_inr?.toLocaleString('en-IN')} (+ GST)`)}
+                        </td>
+                        <td className="py-5 px-6 align-top">
+                          <ul className="space-y-1.5 text-xs text-slate-300">
+                            <li className="flex items-center space-x-1.5">
+                              <span className="text-emerald-400">•</span>
+                              <span>{p.duration_label || `Up to ${p.duration_hours || Math.round(p.monthly_minute_quota / 60)} Hours live audio`}</span>
+                            </li>
+                            <li className="flex items-center space-x-1.5">
+                              <span className="text-emerald-400">•</span>
+                              <span>{p.events_per_day_label || `Max ${p.max_events} Event / day`}</span>
+                            </li>
+                            <li className="flex items-center space-x-1.5">
+                              <span className="text-emerald-400">•</span>
+                              <span>Up to <strong className="text-white font-semibold">{p.max_listeners || 50} Listeners</strong></span>
+                            </li>
+                          </ul>
+                        </td>
+                        <td className="py-5 px-6 text-xs text-slate-300 max-w-xs align-top leading-relaxed">
+                          {p.key_capabilities || 'Dry-runs, technical tests, soundchecks, 1-on-1 translator trials'}
+                        </td>
+                        <td className="py-5 px-6 text-right align-top whitespace-nowrap">
+                          <button
+                            onClick={() => handleUpgradePlan(p.slug)}
+                            disabled={isCurrent}
+                            className={`py-2 px-4 rounded-xl text-xs font-semibold transition ${
+                              isCurrent
+                                ? 'bg-slate-800 text-slate-400 border border-slate-700 cursor-default'
+                                : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20'
+                            }`}
+                          >
+                            {isCurrent ? 'Active Plan' : `Switch to Plan`}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile / Tablet Responsive Cards View */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:hidden gap-4">
               {plans.map((p) => {
-                const isCurrent = stats?.planName?.toLowerCase().includes(p.slug.toLowerCase());
+                const isCurrent = stats?.planName?.toLowerCase().includes(p.slug.toLowerCase()) ||
+                                  stats?.planName?.toLowerCase().includes(p.name.toLowerCase());
                 return (
                   <div
                     key={p.id}
@@ -1181,30 +1266,36 @@ export default function DashboardPage() {
                         : 'bg-slate-950 border-slate-800'
                     }`}
                   >
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-base font-bold text-white">{p.name}</span>
                         {isCurrent && (
                           <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-500 text-slate-950">
-                            Current Plan
+                            Current
                           </span>
                         )}
                       </div>
                       <div className="text-2xl font-black text-white">
-                        ${(p.price_cents / 100).toFixed(0)}
-                        <span className="text-xs font-normal text-slate-400"> / month</span>
+                        {p.price_label || (p.price_inr === 0 ? '₹0' : `₹${p.price_inr?.toLocaleString('en-IN')} (+ GST)`)}
                       </div>
-                      <ul className="text-xs text-slate-300 space-y-1.5 pt-2">
-                        <li>• {p.monthly_minute_quota} translation minutes / month</li>
-                        <li>• Up to {p.max_concurrent_rooms} concurrent translation rooms</li>
-                        <li>• Up to {p.max_events} scheduled events</li>
-                      </ul>
+                      <div className="border-t border-slate-800/80 pt-3 space-y-1.5 text-xs text-slate-300">
+                        <div className="font-semibold text-slate-400 uppercase text-[10px] tracking-wider">Duration & Quotas:</div>
+                        <ul className="space-y-1">
+                          <li>• {p.duration_label || `Up to ${p.duration_hours || Math.round(p.monthly_minute_quota / 60)} Hours live audio`}</li>
+                          <li>• {p.events_per_day_label || `Max ${p.max_events} Event / day`}</li>
+                          <li>• Up to <strong className="text-white">{p.max_listeners || 50} Listeners</strong></li>
+                        </ul>
+                      </div>
+                      <div className="border-t border-slate-800/80 pt-3 space-y-1 text-xs text-slate-300">
+                        <div className="font-semibold text-slate-400 uppercase text-[10px] tracking-wider">Key Capabilities:</div>
+                        <p className="text-slate-400 text-xs leading-relaxed">{p.key_capabilities}</p>
+                      </div>
                     </div>
 
                     <button
                       onClick={() => handleUpgradePlan(p.slug)}
                       disabled={isCurrent}
-                      className={`w-full py-2 rounded-xl text-xs font-semibold transition ${
+                      className={`w-full py-2.5 rounded-xl text-xs font-semibold transition ${
                         isCurrent
                           ? 'bg-slate-800 text-slate-500 cursor-default'
                           : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow'
@@ -1242,7 +1333,9 @@ export default function DashboardPage() {
                       <td className="py-2.5 font-mono text-emerald-400">{inv.id}</td>
                       <td className="text-slate-300">{new Date(inv.created_at).toLocaleDateString()}</td>
                       <td className="text-slate-200">{inv.billing_reason}</td>
-                      <td className="font-bold text-white">${(inv.amount_cents / 100).toFixed(2)}</td>
+                      <td className="font-bold text-white">
+                        {inv.currency === 'INR' || !inv.currency ? `₹${(inv.amount_cents / 100).toLocaleString('en-IN')}` : `$${(inv.amount_cents / 100).toFixed(2)}`}
+                      </td>
                       <td>
                         <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 uppercase font-mono text-[10px]">
                           {inv.status}

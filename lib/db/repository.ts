@@ -77,36 +77,68 @@ function initMemoryStore(): DataStore {
   store.profiles.set(defaultSuperAdmin.id, defaultSuperAdmin);
   store.profiles.set(defaultAdmin.id, defaultAdmin);
 
-  // Seed default plans
-  const freePlan: Plan = {
-    id: 'plan-free',
-    name: 'Free Starter',
+  // Seed the 3 new subscription passes
+  const starterPlan: Plan = {
+    id: 'plan-starter',
+    name: 'Free Starter Pass',
     slug: 'free',
-    max_events: 5,
+    max_events: 1,
     max_concurrent_rooms: 3,
-    monthly_minute_quota: 120,
+    monthly_minute_quota: 60,
     price_cents: 0,
+    price_inr: 0,
+    price_label: '₹0',
+    duration_hours: 1,
+    duration_label: 'Up to 1 Hour live audio',
+    max_listeners: 25,
+    events_per_day_label: 'Max 1 Event / day',
+    key_capabilities: 'Dry-runs, technical tests, soundchecks, 1-on-1 translator trials',
     created_at: new Date().toISOString(),
   };
-  const proPlan: Plan = {
-    id: 'plan-pro',
-    name: 'Pro Broadcaster',
-    slug: 'pro',
-    max_events: 50,
-    max_concurrent_rooms: 15,
-    monthly_minute_quota: 1200,
-    price_cents: 9900,
+  const singleEventPlan: Plan = {
+    id: 'plan-single-event',
+    name: 'Single Event Pass',
+    slug: 'single-event',
+    max_events: 1,
+    max_concurrent_rooms: 10,
+    monthly_minute_quota: 180,
+    price_cents: 299900,
+    price_inr: 2999,
+    price_label: '₹2,999 (+ GST)',
+    duration_hours: 3,
+    duration_label: 'Up to 3 Hours live audio',
+    max_listeners: 150,
+    events_per_day_label: 'Max 1 Event / day',
+    key_capabilities: 'Product launches, keynotes, single-session seminars, town halls',
     created_at: new Date().toISOString(),
   };
-  store.plans.set(freePlan.id, freePlan);
-  store.plans.set(proPlan.id, proPlan);
+  const fullDayPlan: Plan = {
+    id: 'plan-full-day',
+    name: 'Full Day Pass',
+    slug: 'full-day',
+    max_events: 999,
+    max_concurrent_rooms: 25,
+    monthly_minute_quota: 480,
+    price_cents: 799900,
+    price_inr: 7999,
+    price_label: '₹7,999 (+ GST)',
+    duration_hours: 8,
+    duration_label: 'Up to 8 Hours live audio',
+    max_listeners: 500,
+    events_per_day_label: 'Unlimited events per day',
+    key_capabilities: 'Full-day corporate conferences, medical summits, trade meets',
+    created_at: new Date().toISOString(),
+  };
+  store.plans.set(starterPlan.id, starterPlan);
+  store.plans.set(singleEventPlan.id, singleEventPlan);
+  store.plans.set(fullDayPlan.id, fullDayPlan);
 
   // Default Primary Organization
   const defaultOrg: Organization = {
     id: '00000000-0000-0000-0000-000000000001',
     name: 'Acme Global Events',
     slug: 'acme-global',
-    plan_id: proPlan.id,
+    plan_id: singleEventPlan.id,
     status: 'active',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -1631,72 +1663,103 @@ export const Repository = {
 
   // 5. MANAGE SUBSCRIPTIONS & PLANS
   async getPlans(): Promise<Plan[]> {
-    // Ensure Enterprise plan exists
-    if (!store.plans.has('plan-enterprise')) {
-      const enterprise: Plan = {
-        id: 'plan-enterprise',
-        name: 'Enterprise Ultra',
-        slug: 'enterprise',
-        max_events: 500,
-        max_concurrent_rooms: 50,
-        monthly_minute_quota: 5000,
-        price_cents: 29900,
-        created_at: new Date().toISOString(),
-      };
-      store.plans.set(enterprise.id, enterprise);
-    }
-    return Array.from(store.plans.values());
+    const starterPlan: Plan = {
+      id: 'plan-starter',
+      name: 'Free Starter Pass',
+      slug: 'free',
+      max_events: 1,
+      max_concurrent_rooms: 3,
+      monthly_minute_quota: 60,
+      price_cents: 0,
+      price_inr: 0,
+      price_label: '₹0',
+      duration_hours: 1,
+      duration_label: 'Up to 1 Hour live audio',
+      max_listeners: 25,
+      events_per_day_label: 'Max 1 Event / day',
+      key_capabilities: 'Dry-runs, technical tests, soundchecks, 1-on-1 translator trials',
+      created_at: new Date().toISOString(),
+    };
+    const singleEventPlan: Plan = {
+      id: 'plan-single-event',
+      name: 'Single Event Pass',
+      slug: 'single-event',
+      max_events: 1,
+      max_concurrent_rooms: 10,
+      monthly_minute_quota: 180,
+      price_cents: 299900,
+      price_inr: 2999,
+      price_label: '₹2,999 (+ GST)',
+      duration_hours: 3,
+      duration_label: 'Up to 3 Hours live audio',
+      max_listeners: 150,
+      events_per_day_label: 'Max 1 Event / day',
+      key_capabilities: 'Product launches, keynotes, single-session seminars, town halls',
+      created_at: new Date().toISOString(),
+    };
+    const fullDayPlan: Plan = {
+      id: 'plan-full-day',
+      name: 'Full Day Pass',
+      slug: 'full-day',
+      max_events: 999,
+      max_concurrent_rooms: 25,
+      monthly_minute_quota: 480,
+      price_cents: 799900,
+      price_inr: 7999,
+      price_label: '₹7,999 (+ GST)',
+      duration_hours: 8,
+      duration_label: 'Up to 8 Hours live audio',
+      max_listeners: 500,
+      events_per_day_label: 'Unlimited events per day',
+      key_capabilities: 'Full-day corporate conferences, medical summits, trade meets',
+      created_at: new Date().toISOString(),
+    };
+
+    store.plans.set(starterPlan.id, starterPlan);
+    store.plans.set(singleEventPlan.id, singleEventPlan);
+    store.plans.set(fullDayPlan.id, fullDayPlan);
+
+    return [starterPlan, singleEventPlan, fullDayPlan];
   },
 
   async upgradeSubscription(organizationId: string, planSlug: string): Promise<{ org: Organization; invoice: any }> {
     const plans = await this.getPlans();
-    const targetPlan = plans.find(p => p.slug === planSlug);
+    const targetPlan = plans.find(p => p.slug === planSlug || p.id === planSlug);
     if (!targetPlan) throw new Error('Selected plan not found');
 
-    const org = store.organizations.get(organizationId);
+    const org = store.organizations.get(organizationId) || (await this.getDefaultOrganization());
     if (!org) throw new Error('Organization not found');
 
     org.plan_id = targetPlan.id;
     org.updated_at = new Date().toISOString();
     store.organizations.set(organizationId, org);
 
-    // Create billing invoice record
+    // Create billing invoice record in INR
     const invoice = {
       id: `inv_${randomBytes(6).toString('hex')}`,
       organization_id: organizationId,
       amount_cents: targetPlan.price_cents,
-      currency: 'USD',
+      currency: 'INR',
       status: 'paid',
-      billing_reason: `Subscription Upgrade to ${targetPlan.name}`,
+      billing_reason: `Subscription Upgrade to ${targetPlan.name} (${targetPlan.price_label})`,
       created_at: new Date().toISOString(),
     };
 
-    await this.logActivity(organizationId, 'SUBSCRIPTION_UPGRADED', `Upgraded plan to ${targetPlan.name} (${targetPlan.monthly_minute_quota}m quota)`);
+    await this.logActivity(organizationId, 'SUBSCRIPTION_UPGRADED', `Upgraded plan to ${targetPlan.name} (${targetPlan.duration_label}, ${targetPlan.max_listeners} listeners)`);
     return { org, invoice };
   },
 
   // 6. VIEW INVOICES
   async getInvoices(organizationId: string) {
-    // Generate default initial invoice if none exist
     return [
       {
         id: 'inv_092026_01',
         organization_id: organizationId,
-        amount_cents: 9900,
-        currency: 'USD',
+        amount_cents: 299900,
+        currency: 'INR',
         status: 'paid',
-        billing_reason: 'Pro Broadcaster Monthly Subscription',
-        created_at: new Date(Date.now() - 5 * 86400000).toISOString(),
-        invoice_pdf_url: '#',
-      },
-      {
-        id: 'inv_082026_01',
-        organization_id: organizationId,
-        amount_cents: 9900,
-        currency: 'USD',
-        status: 'paid',
-        billing_reason: 'Pro Broadcaster Monthly Subscription',
-        created_at: new Date(Date.now() - 35 * 86400000).toISOString(),
+        billing_reason: 'Single Event Pass (Up to 3 Hours, 150 Listeners)',
+        created_at: new Date(Date.now() - 2 * 86400000).toISOString(),
         invoice_pdf_url: '#',
       },
     ];

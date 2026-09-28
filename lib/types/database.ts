@@ -27,6 +27,13 @@ export interface Plan {
   max_concurrent_rooms: number;
   monthly_minute_quota: number;
   price_cents: number;
+  price_inr?: number;
+  price_label?: string;
+  duration_hours?: number;
+  duration_label?: string;
+  max_listeners?: number;
+  events_per_day_label?: string;
+  key_capabilities?: string;
   created_at: string;
 }
 
