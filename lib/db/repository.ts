@@ -1828,11 +1828,20 @@ export const Repository = {
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
       if (admin) {
-        const { data, error } = await admin.from('profiles').select('*').eq('id', userId).single();
-        if (!error && data) {
-          const profile = data as Profile;
-          store.profiles.set(profile.id, profile);
-          return profile;
+        try {
+          const { data, error } = await admin.from('profiles').select('*').eq('id', userId).single();
+          if (!error && data) {
+            const profile = data as any;
+            if (!profile.role || !profile.username) {
+              const { data: userData } = await admin.auth.admin.getUserById(userId);
+              profile.role = profile.role || (userData?.user?.user_metadata?.role as UserRole) || 'admin';
+              profile.username = profile.username || userData?.user?.user_metadata?.username || (profile.email || '').split('@')[0];
+            }
+            store.profiles.set(profile.id, profile as Profile);
+            return profile as Profile;
+          }
+        } catch (err) {
+          console.warn('[Repository] getProfileById error:', err);
         }
       }
     }
@@ -1844,11 +1853,20 @@ export const Repository = {
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
       if (admin) {
-        const { data, error } = await admin.from('profiles').select('*').ilike('email', cleanEmail).limit(1).maybeSingle();
-        if (!error && data) {
-          const profile = data as Profile;
-          store.profiles.set(profile.id, profile);
-          return profile;
+        try {
+          const { data, error } = await admin.from('profiles').select('*').ilike('email', cleanEmail).limit(1).maybeSingle();
+          if (!error && data) {
+            const profile = data as any;
+            if (!profile.role || !profile.username) {
+              const { data: userData } = await admin.auth.admin.getUserById(profile.id);
+              profile.role = profile.role || (userData?.user?.user_metadata?.role as UserRole) || 'admin';
+              profile.username = profile.username || userData?.user?.user_metadata?.username || cleanEmail.split('@')[0];
+            }
+            store.profiles.set(profile.id, profile as Profile);
+            return profile as Profile;
+          }
+        } catch (err) {
+          console.warn('[Repository] getProfileByEmail error:', err);
         }
       }
     }
@@ -1863,11 +1881,38 @@ export const Repository = {
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
       if (admin) {
-        const { data, error } = await admin.from('profiles').select('*').ilike('username', cleanUsername).limit(1).maybeSingle();
-        if (!error && data) {
-          const profile = data as Profile;
-          store.profiles.set(profile.id, profile);
-          return profile;
+        try {
+          const { data, error } = await admin.from('profiles').select('*').ilike('username', cleanUsername).limit(1).maybeSingle();
+          if (!error && data) {
+            const profile = data as Profile;
+            store.profiles.set(profile.id, profile);
+            return profile;
+          }
+
+          // If role/username column does not exist in profiles table yet, query Supabase Auth user metadata
+          if (error && (error.code === '42703' || (error.message || '').toLowerCase().includes('username') || (error.message || '').toLowerCase().includes('schema cache'))) {
+            const { data: usersData } = await admin.auth.admin.listUsers();
+            const matchedUser = usersData?.users?.find(
+              (u) =>
+                (u.user_metadata?.username || '').toLowerCase() === cleanUsername ||
+                (u.email || '').split('@')[0].toLowerCase() === cleanUsername
+            );
+            if (matchedUser) {
+              const p: Profile = {
+                id: matchedUser.id,
+                email: matchedUser.email || '',
+                username: matchedUser.user_metadata?.username || cleanUsername,
+                full_name: matchedUser.user_metadata?.full_name || cleanUsername,
+                role: (matchedUser.user_metadata?.role as UserRole) || 'admin',
+                created_at: matchedUser.created_at,
+                updated_at: matchedUser.updated_at || matchedUser.created_at,
+              };
+              store.profiles.set(p.id, p);
+              return p;
+            }
+          }
+        } catch (err) {
+          console.warn('[Repository] getProfileByUsername error:', err);
         }
       }
     }
@@ -1886,15 +1931,23 @@ export const Repository = {
   },
 
   async isUsernameAvailable(username: string): Promise<boolean> {
-    const clean = username.trim().toLowerCase();
-    const existing = await this.getProfileByUsername(clean);
-    return !existing;
+    try {
+      const clean = username.trim().toLowerCase();
+      const existing = await this.getProfileByUsername(clean);
+      return !existing;
+    } catch {
+      return true;
+    }
   },
 
   async isEmailRegistered(email: string): Promise<boolean> {
-    const clean = email.trim().toLowerCase();
-    const existing = await this.getProfileByEmail(clean);
-    return !!existing;
+    try {
+      const clean = email.trim().toLowerCase();
+      const existing = await this.getProfileByEmail(clean);
+      return !!existing;
+    } catch {
+      return false;
+    }
   },
 
   async createProfile(params: {
@@ -1925,6 +1978,7 @@ export const Repository = {
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
       if (admin) {
+        // Attempt full upsert including role and username
         const { data, error } = await admin
           .from('profiles')
           .upsert(profile, { onConflict: 'id' })
@@ -1935,7 +1989,30 @@ export const Repository = {
           store.profiles.set(p.id, p);
           return p;
         }
+
+        // Graceful fallback if database migration 002 has not been run yet
         if (error) {
+          const errMsg = (error.message || '').toLowerCase();
+          if (errMsg.includes('role') || errMsg.includes('username') || errMsg.includes('schema cache')) {
+            console.warn('[Repository] Supabase profiles table does not have role/username columns yet. Falling back to base fields and auth metadata.');
+            const baseProfile = {
+              id: profile.id,
+              email: profile.email,
+              full_name: profile.full_name,
+              avatar_url: profile.avatar_url,
+              created_at: profile.created_at,
+              updated_at: profile.updated_at,
+            };
+            const { error: baseError } = await admin
+              .from('profiles')
+              .upsert(baseProfile, { onConflict: 'id' });
+            if (baseError) {
+              console.error('[Repository] Error inserting base profile into Supabase:', baseError);
+            }
+            store.profiles.set(profile.id, profile);
+            return profile;
+          }
+
           console.error('[Repository] Error creating profile in Supabase:', error);
           throw new Error(error.message);
         }
