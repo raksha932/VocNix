@@ -6,7 +6,16 @@ export const revalidate = 0;
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    let body: any = {};
+    try {
+      body = await req.json();
+    } catch {
+      try {
+        const text = await req.text();
+        if (text) body = JSON.parse(text);
+      } catch {}
+    }
+
     const { roomId, sessionKey } = body;
 
     if (!roomId || !sessionKey) {
@@ -17,7 +26,11 @@ export async function POST(req: NextRequest) {
     }
 
     const updatedListeners = await Repository.registerAudienceHeartbeat(roomId, sessionKey);
-    return NextResponse.json({ success: true, listeners: updatedListeners });
+    return NextResponse.json({
+      success: true,
+      listeners: updatedListeners,
+      listenerCount: updatedListeners,
+    });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }

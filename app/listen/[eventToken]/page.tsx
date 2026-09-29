@@ -39,6 +39,11 @@ export default function AudienceListenPage() {
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const audioServiceRef = useRef<AudioService | null>(null);
   const sessionKeyRef = useRef<string>('');
+  const selectedRoomRef = useRef<any>(null);
+
+  useEffect(() => {
+    selectedRoomRef.current = selectedLanguageRoom;
+  }, [selectedLanguageRoom]);
 
   // 1. Fetch Event details and available dynamic languages
   useEffect(() => {
@@ -110,10 +115,12 @@ export default function AudienceListenPage() {
 
     return () => {
       // Leave audience session
-      if (selectedLanguageRoom?.id && sessionKeyRef.current) {
+      const room = selectedRoomRef.current;
+      const sKey = sessionKeyRef.current;
+      if (room?.id && sKey) {
         const payload = JSON.stringify({
-          roomId: selectedLanguageRoom.id,
-          sessionKey: sessionKeyRef.current,
+          roomId: room.id,
+          sessionKey: sKey,
         });
         if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
           navigator.sendBeacon('/api/audience/leave', new Blob([payload], { type: 'application/json' }));
@@ -130,13 +137,15 @@ export default function AudienceListenPage() {
     };
   }, []);
 
-  // Reliable tab close / browser leave cleanup via sendBeacon
+  // Reliable tab close browser leave cleanup via sendBeacon
   useEffect(() => {
     const handleLeave = () => {
-      if (selectedLanguageRoom?.id && sessionKeyRef.current) {
+      const room = selectedRoomRef.current;
+      const sKey = sessionKeyRef.current;
+      if (room?.id && sKey) {
         const payload = JSON.stringify({
-          roomId: selectedLanguageRoom.id,
-          sessionKey: sessionKeyRef.current,
+          roomId: room.id,
+          sessionKey: sKey,
         });
         if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
           navigator.sendBeacon('/api/audience/leave', new Blob([payload], { type: 'application/json' }));
@@ -152,12 +161,10 @@ export default function AudienceListenPage() {
     };
 
     window.addEventListener('beforeunload', handleLeave);
-    window.addEventListener('pagehide', handleLeave);
     return () => {
       window.removeEventListener('beforeunload', handleLeave);
-      window.removeEventListener('pagehide', handleLeave);
     };
-  }, [selectedLanguageRoom?.id]);
+  }, []);
 
   // Periodic heartbeat while connected to maintain live count & record duration
   useEffect(() => {
@@ -191,13 +198,13 @@ export default function AudienceListenPage() {
       setConnectingAudio(true);
       setError(null);
 
-      // If switching from another room, leave previous channel
-      if (selectedLanguageRoom?.id && selectedLanguageRoom.id !== roomObj.id && sessionKeyRef.current) {
-        fetch('/api/audience/leave', {
+      // If switching from another room, leave previous channel cleanly
+      if (selectedRoomRef.current?.id && selectedRoomRef.current.id !== roomObj.id && sessionKeyRef.current) {
+        await fetch('/api/audience/leave', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            roomId: selectedLanguageRoom.id,
+            roomId: selectedRoomRef.current.id,
             sessionKey: sessionKeyRef.current,
           }),
         }).catch(() => {});
@@ -436,6 +443,18 @@ export default function AudienceListenPage() {
 
             <button
               onClick={() => {
+                const room = selectedRoomRef.current || selectedLanguageRoom;
+                const sKey = sessionKeyRef.current;
+                if (room?.id && sKey) {
+                  fetch('/api/audience/leave', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      roomId: room.id,
+                      sessionKey: sKey,
+                    }),
+                  }).catch(() => {});
+                }
                 audioServiceRef.current?.disconnect();
                 setAudioConnected(false);
                 setIsPlaying(false);

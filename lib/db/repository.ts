@@ -942,15 +942,32 @@ export const Repository = {
         }).eq('id', sessionId);
 
         if (room) {
-          await admin.from('translation_rooms').update({ status: 'idle', updated_at: now.toISOString() }).eq('id', room.id);
+          await admin.from('translation_rooms').update({
+            status: 'idle',
+            active_listener_count: 0,
+            updated_at: now.toISOString(),
+          }).eq('id', room.id);
+
+          await admin.from('audience_sessions').update({
+            left_at: now.toISOString(),
+          }).eq('translation_room_id', room.id).is('left_at', null);
         }
       }
     }
 
     if (room) {
       room.status = 'idle';
+      room.active_listener_count = 0;
       room.updated_at = now.toISOString();
       store.translationRooms.set(room.id, room);
+
+      // Close memory audience sessions for this room
+      for (const aud of Array.from(store.audienceSessions.values())) {
+        if (aud.translation_room_id === room.id && !aud.left_at) {
+          aud.left_at = now.toISOString();
+          store.audienceSessions.set(aud.id, aud);
+        }
+      }
 
       let event = store.events.get(room.event_id);
       if (!event && isSupabaseConfigured()) {
@@ -1000,6 +1017,60 @@ export const Repository = {
   },
 
   // AUDIENCE LISTENERS
+  async recalculateRoomListenerCount(roomId: string): Promise<number> {
+    const now = new Date().toISOString();
+
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        // Query distinct active sessions from audience_sessions
+        const { data: activeList, error: qErr } = await admin
+          .from('audience_sessions')
+          .select('session_key')
+          .eq('translation_room_id', roomId)
+          .is('left_at', null);
+
+        if (qErr) {
+          console.error(`[Repository] Error querying active sessions for room ${roomId}:`, qErr);
+        }
+
+        const uniqueKeys = new Set((activeList || []).map((s: any) => s.session_key));
+        const count = uniqueKeys.size;
+
+        // Persist directly to Supabase translation_rooms.active_listener_count
+        const { error: uErr } = await admin
+          .from('translation_rooms')
+          .update({ active_listener_count: count, updated_at: now })
+          .eq('id', roomId);
+
+        if (uErr) {
+          console.error(`[Repository] Error updating active_listener_count for room ${roomId}:`, uErr);
+        }
+
+        // Update memory cache
+        const room = store.translationRooms.get(roomId);
+        if (room) {
+          room.active_listener_count = count;
+          room.updated_at = now;
+          store.translationRooms.set(roomId, room);
+        }
+
+        return count;
+      }
+    }
+
+    const count = Array.from(store.audienceSessions.values()).filter(
+      s => s.translation_room_id === roomId && !s.left_at
+    ).length;
+    const room = store.translationRooms.get(roomId);
+    if (room) {
+      room.active_listener_count = count;
+      room.updated_at = now;
+      store.translationRooms.set(roomId, room);
+    }
+    return count;
+  },
+
   async registerAudienceJoin(roomId: string, sessionKey: string, meta?: { ip?: string; ua?: string }): Promise<number> {
     const now = new Date().toISOString();
 
@@ -1007,12 +1078,26 @@ export const Repository = {
       const admin = getSupabaseAdmin();
       if (admin) {
         // 1. Close any older active session for this sessionKey in a different room (e.g. if switched channel)
-        await admin
+        const { data: prevSessions } = await admin
           .from('audience_sessions')
-          .update({ left_at: now })
+          .select('translation_room_id')
           .eq('session_key', sessionKey)
           .neq('translation_room_id', roomId)
           .is('left_at', null);
+
+        if (prevSessions && prevSessions.length > 0) {
+          await admin
+            .from('audience_sessions')
+            .update({ left_at: now })
+            .eq('session_key', sessionKey)
+            .neq('translation_room_id', roomId)
+            .is('left_at', null);
+
+          const oldRoomIds = Array.from(new Set(prevSessions.map((s: any) => s.translation_room_id)));
+          for (const oldRoomId of oldRoomIds) {
+            await this.recalculateRoomListenerCount(oldRoomId);
+          }
+        }
 
         // 2. Check if already active in this room
         const { data: existing } = await admin
@@ -1035,35 +1120,25 @@ export const Repository = {
           });
         }
 
-        // 3. Count exact active listeners for this room
-        const { count: activeCount } = await admin
-          .from('audience_sessions')
-          .select('*', { count: 'exact', head: true })
-          .eq('translation_room_id', roomId)
-          .is('left_at', null);
-
-        const count = Math.max(1, activeCount || 1);
-
-        // 4. Update translation_rooms.active_listener_count in Supabase
-        await admin
-          .from('translation_rooms')
-          .update({ active_listener_count: count, updated_at: now })
-          .eq('id', roomId);
-
-        // Update local memory store
-        let room = store.translationRooms.get(roomId);
-        if (room) {
-          room.active_listener_count = count;
-          room.updated_at = now;
-          store.translationRooms.set(roomId, room);
-        }
-
-        return count;
+        // 3. Atomically recalculate and persist active listener count for this room in Supabase
+        const count = await this.recalculateRoomListenerCount(roomId);
+        return Math.max(1, count);
       }
     }
 
-    let room = store.translationRooms.get(roomId);
-    if (!room) return 0;
+    // Memory store fallback
+    // Close session in other rooms for this sessionKey
+    for (const aud of Array.from(store.audienceSessions.values())) {
+      if (aud.session_key === sessionKey && aud.translation_room_id !== roomId && !aud.left_at) {
+        aud.left_at = now;
+        store.audienceSessions.set(aud.id, aud);
+        const prevRoom = store.translationRooms.get(aud.translation_room_id);
+        if (prevRoom) {
+          prevRoom.active_listener_count = Math.max(0, (prevRoom.active_listener_count || 1) - 1);
+          prevRoom.updated_at = now;
+        }
+      }
+    }
 
     const existing = Array.from(store.audienceSessions.values()).find(
       s => s.translation_room_id === roomId && s.session_key === sessionKey && !s.left_at
@@ -1086,9 +1161,12 @@ export const Repository = {
       s => s.translation_room_id === roomId && !s.left_at
     ).length;
 
-    room.active_listener_count = count;
-    room.updated_at = now;
-    store.translationRooms.set(roomId, room);
+    let room = store.translationRooms.get(roomId);
+    if (room) {
+      room.active_listener_count = count;
+      room.updated_at = now;
+      store.translationRooms.set(roomId, room);
+    }
 
     return count;
   },
@@ -1106,26 +1184,7 @@ export const Repository = {
           .eq('session_key', sessionKey)
           .is('left_at', null);
 
-        const { count: activeCount } = await admin
-          .from('audience_sessions')
-          .select('*', { count: 'exact', head: true })
-          .eq('translation_room_id', roomId)
-          .is('left_at', null);
-
-        const count = Math.max(0, activeCount || 0);
-
-        await admin
-          .from('translation_rooms')
-          .update({ active_listener_count: count, updated_at: now })
-          .eq('id', roomId);
-
-        let room = store.translationRooms.get(roomId);
-        if (room) {
-          room.active_listener_count = count;
-          room.updated_at = now;
-          store.translationRooms.set(roomId, room);
-        }
-
+        const count = await this.recalculateRoomListenerCount(roomId);
         return count;
       }
     }
@@ -1133,13 +1192,11 @@ export const Repository = {
     let room = store.translationRooms.get(roomId);
     if (!room) return 0;
 
-    const audSession = Array.from(store.audienceSessions.values()).find(
-      s => s.translation_room_id === roomId && s.session_key === sessionKey && !s.left_at
-    );
-
-    if (audSession) {
-      audSession.left_at = now;
-      store.audienceSessions.set(audSession.id, audSession);
+    for (const audSession of Array.from(store.audienceSessions.values())) {
+      if (audSession.translation_room_id === roomId && audSession.session_key === sessionKey && !audSession.left_at) {
+        audSession.left_at = now;
+        store.audienceSessions.set(audSession.id, audSession);
+      }
     }
 
     const count = Array.from(store.audienceSessions.values()).filter(
@@ -1178,28 +1235,25 @@ export const Repository = {
           });
         }
 
-        // Clean up stale sessions that haven't left and joined > 3 hours ago
-        const staleThreshold = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
-        await admin
+        // Clean up stale sessions that haven't left and joined > 2 hours ago
+        const staleThreshold = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+        const { data: staleSessions } = await admin
           .from('audience_sessions')
-          .update({ left_at: now })
+          .select('id')
           .eq('translation_room_id', roomId)
           .is('left_at', null)
           .lt('joined_at', staleThreshold);
 
-        const { count: activeCount } = await admin
-          .from('audience_sessions')
-          .select('*', { count: 'exact', head: true })
-          .eq('translation_room_id', roomId)
-          .is('left_at', null);
+        if (staleSessions && staleSessions.length > 0) {
+          await admin
+            .from('audience_sessions')
+            .update({ left_at: now })
+            .eq('translation_room_id', roomId)
+            .is('left_at', null)
+            .lt('joined_at', staleThreshold);
+        }
 
-        const count = Math.max(0, activeCount || 0);
-
-        await admin
-          .from('translation_rooms')
-          .update({ active_listener_count: count, updated_at: now })
-          .eq('id', roomId);
-
+        const count = await this.recalculateRoomListenerCount(roomId);
         return count;
       }
     }
@@ -1211,23 +1265,8 @@ export const Repository = {
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
       if (admin) {
-        const { data: room } = await admin
-          .from('translation_rooms')
-          .select('active_listener_count')
-          .eq('id', roomId)
-          .maybeSingle();
-
-        if (room && typeof room.active_listener_count === 'number') {
-          return room.active_listener_count;
-        }
-
-        const { count: activeCount } = await admin
-          .from('audience_sessions')
-          .select('*', { count: 'exact', head: true })
-          .eq('translation_room_id', roomId)
-          .is('left_at', null);
-
-        return activeCount || 0;
+        const count = await this.recalculateRoomListenerCount(roomId);
+        return count;
       }
     }
 
@@ -1414,16 +1453,44 @@ export const Repository = {
       const admin = getSupabaseAdmin();
       if (admin) {
         try {
-          const { count: exactAudienceCount } = await admin
+          const { data: activeAudience } = await admin
             .from('audience_sessions')
-            .select('*', { count: 'exact', head: true })
+            .select('translation_room_id, session_key')
             .in('translation_room_id', roomIds)
             .is('left_at', null);
 
-          if (typeof exactAudienceCount === 'number' && exactAudienceCount > totalLiveListeners) {
-            totalLiveListeners = exactAudienceCount;
+          if (activeAudience) {
+            const roomSessionsMap: Record<string, Set<string>> = {};
+            for (const rId of roomIds) {
+              roomSessionsMap[rId] = new Set();
+            }
+            for (const s of activeAudience) {
+              if (!roomSessionsMap[s.translation_room_id]) {
+                roomSessionsMap[s.translation_room_id] = new Set();
+              }
+              roomSessionsMap[s.translation_room_id].add(s.session_key);
+            }
+
+            let computedTotal = 0;
+            for (const r of rooms) {
+              const liveCount = roomSessionsMap[r.id] ? roomSessionsMap[r.id].size : 0;
+              roomListenerCounts[r.id] = liveCount;
+              computedTotal += liveCount;
+              // Synchronize room table if drifted
+              if (r.active_listener_count !== liveCount) {
+                admin
+                  .from('translation_rooms')
+                  .update({ active_listener_count: liveCount, updated_at: new Date().toISOString() })
+                  .eq('id', r.id)
+                  .then();
+                r.active_listener_count = liveCount;
+              }
+            }
+            totalLiveListeners = computedTotal;
           }
-        } catch {}
+        } catch (err) {
+          console.error('[Repository] getDashboardStats error syncing audience sessions:', err);
+        }
       }
     }
 

@@ -22,6 +22,9 @@ export async function GET(
 
     const count = await Repository.getActiveListenerCount(roomId);
     const room = await Repository.getRoomById(roomId);
+    if (room) {
+      room.active_listener_count = count;
+    }
 
     return NextResponse.json(
       {

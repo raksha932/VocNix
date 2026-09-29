@@ -128,34 +128,33 @@ export default function DashboardPage() {
         return;
       }
 
+      let roomListenerMap: Record<string, number> = {};
+
       if (statsResult.status === 'fulfilled') {
         const statsData = await statsResult.value.json();
         if (statsData.success) {
           setStats(statsData.stats);
           setActivityLogs(statsData.activityLogs || []);
-
-          // Instantly sync individual room listener counts to event cards
           if (statsData.stats?.roomListenerCounts) {
-            setEvents((prev) =>
-              prev.map((ev) => ({
-                ...ev,
-                rooms: ev.rooms?.map((r: any) => ({
-                  ...r,
-                  active_listener_count:
-                    statsData.stats.roomListenerCounts[r.id] !== undefined
-                      ? statsData.stats.roomListenerCounts[r.id]
-                      : (r.active_listener_count || 0),
-                })),
-              }))
-            );
+            roomListenerMap = statsData.stats.roomListenerCounts;
           }
         }
       }
 
       if (eventsResult.status === 'fulfilled') {
         const eventsData = await eventsResult.value.json();
-        if (eventsData.success) {
-          setEvents(eventsData.events || []);
+        if (eventsData.success && eventsData.events) {
+          const syncedEvents = eventsData.events.map((ev: any) => ({
+            ...ev,
+            rooms: ev.rooms?.map((r: any) => ({
+              ...r,
+              active_listener_count:
+                roomListenerMap[r.id] !== undefined
+                  ? roomListenerMap[r.id]
+                  : (r.active_listener_count || 0),
+            })),
+          }));
+          setEvents(syncedEvents);
         }
       }
 
