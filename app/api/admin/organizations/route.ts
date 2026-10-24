@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromRequest } from '@/lib/auth/session';
 import { Repository } from '@/lib/db/repository';
+import { isResendConfigured, sendOrganizationWelcomeEmail } from '@/lib/email/resend';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,6 +70,25 @@ export async function POST(req: NextRequest) {
       status: status === 'inactive' ? 'inactive' : 'active',
       plan_id: plan_id || undefined,
     });
+
+    // 4. Dispatch onboarding email to the organization administrator via Resend
+    if (isResendConfigured()) {
+      const redirectOrigin = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
+      const plans = await Repository.getPlans();
+      const plan = plans.find((p) => p.id === result.organization.plan_id);
+
+      sendOrganizationWelcomeEmail({
+        to: admin_email.trim().toLowerCase(),
+        adminName: admin_name?.trim() || result.organization.name + ' Administrator',
+        orgName: result.organization.name,
+        username: result.adminUser?.username,
+        temporaryPassword: 'Admin123!',
+        loginUrl: `${redirectOrigin}/login/admin`,
+        planName: plan?.name,
+      }).catch((err) => {
+        console.warn('[AdminOrganizations] Welcome email dispatch warning:', err);
+      });
+    }
 
     return NextResponse.json(
       {

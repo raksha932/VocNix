@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromRequest, UserRole } from '@/lib/auth/session';
 import { getSupabaseAdmin, isSupabaseConfigured } from '@/lib/db/supabase';
 import { Repository } from '@/lib/db/repository';
+import { isResendConfigured, sendUserProvisionedEmail } from '@/lib/email/resend';
 import { randomUUID } from 'crypto';
 
 export const dynamic = 'force-dynamic';
@@ -75,6 +76,21 @@ export async function POST(req: NextRequest) {
       role: targetRole,
       full_name: fullName?.trim() || cleanUsername,
     });
+
+    if (isResendConfigured()) {
+      const redirectOrigin = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
+      const loginUrl = `${redirectOrigin}/login/${targetRole === 'super_admin' ? 'super-admin' : 'admin'}`;
+      sendUserProvisionedEmail({
+        to: cleanEmail,
+        fullName: fullName?.trim() || cleanUsername,
+        username: cleanUsername,
+        role: targetRole,
+        temporaryPassword: password,
+        loginUrl,
+      }).catch((err) => {
+        console.warn('[ProvisionUser] Email dispatch warning:', err);
+      });
+    }
 
     return NextResponse.json({
       success: true,
