@@ -36,3 +36,14 @@ yarn-error.log*
 .DS_Store
 *.pem
 Thumbs.db
+.vercel
+
+# secrets
+infra/.*key*
+infra/.*credentials*
+infra/.digitalocean-key
+infra/.supakey
+infra/.supadb-key
+infra/.superadmin-credentials
+infra/.resend-email-key
+

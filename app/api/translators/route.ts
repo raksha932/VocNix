@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Repository } from '@/lib/db/repository';
 import { resolveRequestOrganization } from '@/lib/auth/organization-context';
+import { isResendConfigured, sendTranslatorInviteEmail } from '@/lib/email/resend';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,6 +31,18 @@ export async function POST(req: NextRequest) {
       email,
       native_languages: native_languages || [],
     });
+
+    // Dispatch welcome email to the newly invited translator via Resend
+    if (isResendConfigured()) {
+      sendTranslatorInviteEmail({
+        to: email.trim().toLowerCase(),
+        translatorName: full_name.trim(),
+        orgName: org.name,
+        nativeLanguages: native_languages || [],
+      }).catch((err) => {
+        console.warn('[Translators] Invite email dispatch warning:', err);
+      });
+    }
 
     return NextResponse.json({ success: true, translator });
   } catch (err: any) {
