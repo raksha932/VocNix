@@ -31,6 +31,8 @@ import {
   Eye,
   CheckCircle2,
   ShieldAlert,
+  Mail,
+  Send,
 } from 'lucide-react';
 import QRCodeModal from '@/components/QRCodeModal';
 
@@ -98,6 +100,29 @@ export default function DashboardPage() {
   const [translatorEmail, setTranslatorEmail] = useState('');
   const [translatorLangs, setTranslatorLangs] = useState('');
   const [deletingTranslatorId, setDeletingTranslatorId] = useState<string | null>(null);
+
+  // Email Translator Assignment Modal State
+  const [emailModal, setEmailModal] = useState<{
+    isOpen: boolean;
+    event: any | null;
+    room: any | null;
+    language: any | null;
+    recipientEmail: string;
+    recipientName: string;
+    loading: boolean;
+    successMessage: string | null;
+    errorMessage: string | null;
+  }>({
+    isOpen: false,
+    event: null,
+    room: null,
+    language: null,
+    recipientEmail: '',
+    recipientName: '',
+    loading: false,
+    successMessage: null,
+    errorMessage: null,
+  });
 
   // Billing & Invoices State
   const [plans, setPlans] = useState<any[]>([]);
@@ -555,6 +580,67 @@ export default function DashboardPage() {
       alert(err.message || 'Error deleting translator');
     } finally {
       setDeletingTranslatorId(null);
+    }
+  };
+
+  // 5c. EMAIL TRANSLATOR BOOTH ACCESS
+  const openEmailTranslatorModal = (event: any, room: any, language: any) => {
+    // If there is an existing translator whose native language matches this channel, pick them as default
+    const matchingTranslator = translators.find((t) =>
+      t.native_languages?.some((nl: string) => nl.toLowerCase() === language?.language_code?.toLowerCase())
+    );
+
+    setEmailModal({
+      isOpen: true,
+      event,
+      room,
+      language,
+      recipientEmail: matchingTranslator?.email || '',
+      recipientName: matchingTranslator?.full_name || '',
+      loading: false,
+      successMessage: null,
+      errorMessage: null,
+    });
+  };
+
+  const handleSendTranslatorEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailModal.recipientEmail.trim() || !emailModal.event || !emailModal.room) return;
+
+    setEmailModal((prev) => ({ ...prev, loading: true, errorMessage: null, successMessage: null }));
+
+    try {
+      const res = await fetch('/api/translators/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventId: emailModal.event.id,
+          roomId: emailModal.room.id,
+          translatorEmail: emailModal.recipientEmail.trim(),
+          translatorName: emailModal.recipientName.trim() || undefined,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to dispatch email.');
+      }
+
+      setEmailModal((prev) => ({
+        ...prev,
+        loading: false,
+        successMessage: `Assignment email sent to ${emailModal.recipientEmail}!`,
+      }));
+
+      setTimeout(() => {
+        setEmailModal((prev) => ({ ...prev, isOpen: false }));
+      }, 1800);
+    } catch (err: any) {
+      setEmailModal((prev) => ({
+        ...prev,
+        loading: false,
+        errorMessage: err.message || 'Error sending assignment email.',
+      }));
     }
   };
 
@@ -1159,6 +1245,14 @@ export default function DashboardPage() {
                                     <Copy className="w-3.5 h-3.5" />
                                   )}
                                 </button>
+
+                                <button
+                                  onClick={() => openEmailTranslatorModal(event, room, lang)}
+                                  title="Email Translator Assignment"
+                                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-400 border border-slate-700 hover:border-emerald-500/30 transition flex items-center space-x-1"
+                                >
+                                  <Mail className="w-3.5 h-3.5" />
+                                </button>
                               </div>
                             </div>
                           );
@@ -1757,6 +1851,154 @@ export default function DashboardPage() {
                   className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl"
                 >
                   Add Translator
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Email Translator Assignment Modal */}
+      {emailModal.isOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                  <Mail className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Email Translator Assignment</h3>
+                  <p className="text-[11px] text-slate-400">
+                    Dispatch live booth link for {emailModal.language?.language_name || 'Channel'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEmailModal((prev) => ({ ...prev, isOpen: false }))}
+                className="text-slate-400 hover:text-white text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            {emailModal.successMessage && (
+              <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center space-x-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{emailModal.successMessage}</span>
+              </div>
+            )}
+
+            {emailModal.errorMessage && (
+              <div className="p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-xs flex items-center space-x-2">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                <span>{emailModal.errorMessage}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSendTranslatorEmail} className="space-y-4 text-xs">
+              <div className="p-3 bg-slate-950 border border-slate-800/80 rounded-xl space-y-1.5 text-slate-400">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Event:</span>
+                  <span className="font-semibold text-slate-200">{emailModal.event?.title}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Language:</span>
+                  <span className="font-semibold text-emerald-400">
+                    {emailModal.language?.language_name} ({emailModal.language?.language_code?.toUpperCase()})
+                  </span>
+                </div>
+                {emailModal.event?.scheduled_start && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Scheduled:</span>
+                    <span className="font-mono text-[11px] text-slate-300">
+                      {new Date(emailModal.event.scheduled_start).toLocaleString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Quick Select from Directory */}
+              {translators.length > 0 && (
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-300">Choose from Translators Directory</label>
+                  <select
+                    onChange={(e) => {
+                      const selected = translators.find((t) => t.id === e.target.value);
+                      if (selected) {
+                        setEmailModal((prev) => ({
+                          ...prev,
+                          recipientEmail: selected.email,
+                          recipientName: selected.full_name,
+                        }));
+                      }
+                    }}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
+                    defaultValue=""
+                  >
+                    <option value="" disabled>-- Select a registered translator --</option>
+                    {translators.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.full_name} ({t.email}) [{t.native_languages?.join(', ')}]
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-300">Translator Full Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Maria Gonzalez"
+                  value={emailModal.recipientName}
+                  onChange={(e) =>
+                    setEmailModal((prev) => ({ ...prev, recipientName: e.target.value }))
+                  }
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-300">Translator Email Address *</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="translator@domain.com"
+                  value={emailModal.recipientEmail}
+                  onChange={(e) =>
+                    setEmailModal((prev) => ({ ...prev, recipientEmail: e.target.value }))
+                  }
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                An email will be dispatched via <strong>Resend</strong> containing the event details, translator instructions, and a secure 1-click link to their live booth.
+              </p>
+
+              <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setEmailModal((prev) => ({ ...prev, isOpen: false }))}
+                  disabled={emailModal.loading}
+                  className="px-3 py-1.5 bg-slate-800 text-slate-300 font-semibold rounded-xl hover:bg-slate-700 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={emailModal.loading || !emailModal.recipientEmail.trim()}
+                  className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-semibold rounded-xl flex items-center space-x-1.5 transition"
+                >
+                  {emailModal.loading ? (
+                    <span>Sending...</span>
+                  ) : (
+                    <>
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Send Assignment Email</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

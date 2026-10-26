@@ -72,12 +72,55 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const { data: authData, error: authError } = await client.auth.signInWithPassword({
+      let { data: authData, error: authError } = await client.auth.signInWithPassword({
         email: resolvedEmail,
         password,
       });
 
-      if (authError || !authData.user) {
+      // Self-healing fallback: if Auth rejects but database profile exists with matching initial/verified password
+      if ((authError || !authData?.user) && profile) {
+        const isMatch = Repository.verifyLocalPassword(profile.id, password);
+        if (isMatch) {
+          const admin = getSupabaseAdmin();
+          if (admin) {
+            try {
+              const { data: createdAuthUser, error: createErr } = await admin.auth.admin.createUser({
+                id: profile.id,
+                email: resolvedEmail,
+                password,
+                email_confirm: true,
+                user_metadata: {
+                  username: profile.username,
+                  full_name: profile.full_name,
+                  role: profile.role,
+                },
+              });
+
+              if (!createErr && createdAuthUser?.user) {
+                authData = { user: createdAuthUser.user, session: null } as any;
+                authError = null;
+              } else {
+                const { data: usersList } = await admin.auth.admin.listUsers();
+                const matched = usersList?.users?.find(
+                  (u) => (u.email || '').toLowerCase() === resolvedEmail.toLowerCase()
+                );
+                if (matched) {
+                  await admin.auth.admin.updateUserById(matched.id, {
+                    password,
+                    email_confirm: true,
+                  });
+                  authData = { user: matched, session: null } as any;
+                  authError = null;
+                }
+              }
+            } catch (healErr) {
+              console.warn('[Login Auth Self-Healing Warning]:', healErr);
+            }
+          }
+        }
+      }
+
+      if (authError || !authData?.user) {
         return NextResponse.json(
           {
             success: false,
