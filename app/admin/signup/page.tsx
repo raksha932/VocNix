@@ -109,7 +109,7 @@ export default function AdminSignupPage() {
 
       setSuccessMessage('Account created successfully! Redirecting to login...');
       setTimeout(() => {
-        router.push('/login?registered=true');
+        router.push('/admin/login?registered=true');
       }, 1000);
     } catch (err: any) {
       setErrorMessage(err.message || 'Network error occurred during registration.');
@@ -319,10 +319,10 @@ export default function AdminSignupPage() {
           <p className="text-slate-400">
             Already have an account?{' '}
             <Link
-              href="/login"
+              href="/admin/login"
               className="text-emerald-400 hover:text-emerald-300 font-semibold underline underline-offset-2 transition"
             >
-              Sign in to your account
+              Sign in to your Admin account
             </Link>
           </p>
         </div>

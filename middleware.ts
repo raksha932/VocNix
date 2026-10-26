@@ -9,6 +9,8 @@ export async function middleware(req: NextRequest) {
     '/admin/login',
     '/admin/signup',
     '/super-admin/login',
+    '/super-admin/signup',
+    '/super-admin/setup',
     '/login',
     '/login/admin',
     '/login/super-admin',
@@ -21,15 +23,22 @@ export async function middleware(req: NextRequest) {
       const destination = session.role === 'super_admin' ? '/admin' : '/dashboard';
       return NextResponse.redirect(new URL(destination, req.url));
     }
-
-    return NextResponse.next();
   }
 
-  // 2. Exclude public authentication paths and health check from route guards
+  // 2. Generic /login redirect to /admin/login
+  if (pathname === '/login') {
+    return NextResponse.redirect(new URL('/admin/login', req.url));
+  }
+
+  // 3. Exclude public authentication paths and health check from route guards
   const publicAuthPaths = [
+    '/admin/login',
+    '/admin/signup',
     '/admin/forgot-password',
-    '/super-admin/forgot-password',
+    '/super-admin/login',
+    '/super-admin/signup',
     '/super-admin/setup',
+    '/super-admin/forgot-password',
     '/auth',
     '/api/auth',
     '/api/health',
@@ -39,7 +48,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // 3. Super Admin Protected API routes (/api/admin/*)
+  // 4. Super Admin Protected API routes (/api/admin/*)
   if (pathname.startsWith('/api/admin')) {
     const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
     const session = token ? await verifySession(token) : null;
@@ -61,7 +70,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // 4. Admin Protected API routes (/api/dashboard/*)
+  // 5. Admin Protected API routes (/api/dashboard/*)
   if (pathname.startsWith('/api/dashboard')) {
     const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
     const session = token ? await verifySession(token) : null;
@@ -83,27 +92,26 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // 5. Super Admin Portal UI Protection (/admin)
-  if (pathname === '/admin' || pathname.startsWith('/admin/')) {
+  // 6. Super Admin Portal UI Protection (/admin and /super-admin/* non-auth pages)
+  if (pathname === '/admin' || pathname.startsWith('/admin/') || pathname.startsWith('/super-admin')) {
     const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
     const session = token ? await verifySession(token) : null;
 
-    if (!session || session.role !== 'super_admin') {
-      const forwardedHost = req.headers.get('x-forwarded-host');
-      const host = forwardedHost || req.headers.get('host') || 'localhost:3000';
-      const isLocalhost = host.includes('localhost') || host.includes('127.0.0.1');
-      const forwardedProto = req.headers.get('x-forwarded-proto');
-      const isHttps = !isLocalhost && (forwardedProto === 'https' || (!forwardedHost && process.env.NODE_ENV === 'production'));
-      const protocol = isHttps ? 'https' : 'http';
-      const origin = `${protocol}://${host}`;
-      const directLoginUrl = new URL('/api/auth/super-admin-direct', origin);
-      return NextResponse.redirect(directLoginUrl);
+    if (!session) {
+      const loginUrl = new URL('/super-admin/login', req.url);
+      return NextResponse.redirect(loginUrl);
+    }
+
+    if (session.role !== 'super_admin') {
+      // Role enforcement: Admins cannot access Super Admin features by changing URL
+      const dashUrl = new URL('/dashboard', req.url);
+      return NextResponse.redirect(dashUrl);
     }
 
     return NextResponse.next();
   }
 
-  // 6. Organization Admin Dashboard UI Protection (/dashboard)
+  // 7. Organization Admin Dashboard UI Protection (/dashboard)
   if (pathname === '/dashboard' || pathname.startsWith('/dashboard/')) {
     const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
     const session = token ? await verifySession(token) : null;
@@ -113,20 +121,12 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    // Role-based rule: Super Admin can NEVER access /dashboard directly.
-    // The ONLY way Super Admin can access the Admin Dashboard is through the Impersonate option.
+    // Role-based rule: Super Admin cannot access /dashboard directly without impersonation
     if (session.role === 'super_admin') {
       const impersonateOrgId = req.cookies.get(IMPERSONATION_COOKIE_NAME)?.value;
       const isImpersonatingQuery = req.nextUrl?.searchParams?.get('impersonate') === 'true';
       if (!impersonateOrgId && !isImpersonatingQuery) {
-        const forwardedHost = req.headers.get('x-forwarded-host');
-        const host = forwardedHost || req.headers.get('host') || 'localhost:3000';
-        const isLocalhost = host.includes('localhost') || host.includes('127.0.0.1');
-        const forwardedProto = req.headers.get('x-forwarded-proto');
-        const isHttps = !isLocalhost && (forwardedProto === 'https' || (!forwardedHost && process.env.NODE_ENV === 'production'));
-        const protocol = isHttps ? 'https' : 'http';
-        const origin = `${protocol}://${host}`;
-        return NextResponse.redirect(new URL('/admin', origin));
+        return NextResponse.redirect(new URL('/admin', req.url));
       }
     }
 

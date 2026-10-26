@@ -1,26 +1,28 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Shield, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight, Activity, KeyRound } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Shield, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight } from 'lucide-react';
 
-export default function SuperAdminLoginPage() {
+function SuperAdminLoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const registered = searchParams.get('registered');
 
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isWrongRole, setIsWrongRole] = useState(false);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(
+    registered ? 'Account created successfully! Please log in with your credentials.' : null
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setSuccessMessage(null);
-    setIsWrongRole(false);
 
     if (!identifier.trim()) {
       setErrorMessage('Please enter your Super Admin username or email address.');
@@ -48,9 +50,6 @@ export default function SuperAdminLoginPage() {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        if (data.code === 'WRONG_ROLE_ADMIN' || res.status === 403) {
-          setIsWrongRole(true);
-        }
         setErrorMessage(data.error || 'Authentication failed. Please verify your credentials.');
         setLoading(false);
         return;
@@ -95,22 +94,9 @@ export default function SuperAdminLoginPage() {
         {errorMessage && (
           <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 flex items-start space-x-3 text-red-700 dark:text-red-300 text-xs">
             <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <div>
-                <strong className="font-semibold text-red-800 dark:text-red-200">Access Restricted: </strong>
-                <span>{errorMessage}</span>
-              </div>
-              {isWrongRole && (
-                <div className="pt-1">
-                  <Link
-                    href="/admin/login"
-                    className="inline-flex items-center space-x-1 text-emerald-600 dark:text-emerald-400 hover:underline font-semibold"
-                  >
-                    <Activity className="w-3.5 h-3.5" />
-                    <span>Go to Admin Login Portal &rarr;</span>
-                  </Link>
-                </div>
-              )}
+            <div>
+              <strong className="font-semibold text-red-800 dark:text-red-200">Access Restricted: </strong>
+              <span>{errorMessage}</span>
             </div>
           </div>
         )}
@@ -203,29 +189,33 @@ export default function SuperAdminLoginPage() {
           </button>
         </form>
 
-        {/* Alternate Portals & Back Navigation */}
-        <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3 text-center text-xs">
-          <div>
+        {/* Super Admin Account Creation Link */}
+        <div className="pt-4 border-t border-slate-200 dark:border-slate-800 text-center text-xs space-y-2">
+          <p className="text-slate-600 dark:text-slate-400">
+            Don&apos;t have a Super Admin account?{' '}
             <Link
-              href="/login"
-              className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:underline font-medium transition inline-flex items-center space-x-1"
+              href="/super-admin/signup"
+              className="text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 font-bold hover:underline transition inline-flex items-center space-x-1"
             >
-              <span>&larr; Back to Login Selection</span>
-            </Link>
-          </div>
-
-          <p className="text-slate-500 dark:text-slate-400">
-            Need Organization Admin access?{' '}
-            <Link
-              href="/admin/login"
-              className="text-emerald-600 dark:text-emerald-400 hover:underline font-semibold transition inline-flex items-center space-x-1"
-            >
-              <Activity className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Admin Login Portal &rarr;</span>
+              <span>Create a Super Admin account &rarr;</span>
             </Link>
           </p>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SuperAdminLoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-[85vh] flex items-center justify-center text-slate-500 text-sm">
+          Loading Super Admin Portal...
+        </div>
+      }
+    >
+      <SuperAdminLoginForm />
+    </Suspense>
   );
 }

@@ -164,9 +164,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          code: 'WRONG_ROLE_ADMIN',
-          message: 'Access restricted: Super Admin privileges required. Please use the Admin Login portal.',
-          error: 'Access restricted: Super Admin privileges required. Please use the Admin Login portal.',
+          code: 'UNAUTHORIZED_ROLE',
+          message: 'Access restricted: Super Admin privileges required.',
+          error: 'Access restricted: Super Admin privileges required.',
+        },
+        { status: 403 }
+      );
+    }
+
+    if (requiredRole === 'admin' && userRole !== 'admin') {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'UNAUTHORIZED_ROLE',
+          message: 'Access restricted: This portal is exclusively for Admin accounts.',
+          error: 'Access restricted: This portal is exclusively for Admin accounts.',
         },
         { status: 403 }
       );

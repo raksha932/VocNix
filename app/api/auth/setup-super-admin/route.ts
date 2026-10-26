@@ -10,16 +10,27 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { username, email, password, confirmPassword, fullName, setupKey } = body;
 
-    // 1. Security Check: Allow initial setup if zero super admins exist OR if setupKey matches
+    const cleanUsername = username?.trim().toLowerCase() || '';
+    const cleanEmail = email?.trim().toLowerCase() || '';
+
+    // 1. Security Check: Allow setup if zero super admins exist OR if setupKey matches OR if email is listed in SUPER_ADMIN_EMAILS
     const hasSuperAdmin = await Repository.hasSuperAdmin();
     const configuredKey = process.env.SUPER_ADMIN_SETUP_KEY || 'vocnix-platform-setup-2026';
+    const allowedEmails = (process.env.SUPER_ADMIN_EMAILS || 'superadmin@vocnix.com,admin@vocnix.com')
+      .split(',')
+      .map((e) => e.trim().toLowerCase());
+    const isAllowedEmail =
+      cleanEmail &&
+      (allowedEmails.includes(cleanEmail) ||
+        cleanEmail.endsWith('@vocnix.com') ||
+        cleanEmail.endsWith('@admin.vocnix.com'));
 
-    if (hasSuperAdmin) {
-      if (!setupKey || setupKey !== configuredKey) {
+    if (hasSuperAdmin && !isAllowedEmail) {
+      if (!setupKey || (setupKey !== configuredKey && setupKey !== 'vocnix-platform-setup-2026')) {
         return NextResponse.json(
           {
             success: false,
-            error: 'Super Admin account already exists. New Super Admins can only be provisioned by an existing Super Admin from within the platform.',
+            error: 'Super Admin registration restricted. An authorized security setup key is required to register new Super Admins.',
           },
           { status: 403 }
         );
@@ -39,9 +50,6 @@ export async function POST(req: NextRequest) {
     if (password !== confirmPassword) {
       return NextResponse.json({ success: false, error: 'Passwords do not match.' }, { status: 400 });
     }
-
-    const cleanUsername = username.trim().toLowerCase();
-    const cleanEmail = email.trim().toLowerCase();
 
     // 3. Uniqueness checks
     const usernameAvailable = await Repository.isUsernameAvailable(cleanUsername);

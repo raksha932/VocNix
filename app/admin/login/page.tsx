@@ -3,7 +3,7 @@
 import { useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Activity, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight, Shield } from 'lucide-react';
+import { Activity, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight } from 'lucide-react';
 
 function AdminLoginForm() {
   const router = useRouter();
@@ -188,25 +188,15 @@ function AdminLoginForm() {
           </button>
         </form>
 
-        {/* Portal Navigation Links */}
-        <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3 text-center text-xs">
-          <div>
+        {/* Admin Account Creation Link */}
+        <div className="pt-4 border-t border-slate-200 dark:border-slate-800 text-center text-xs space-y-2">
+          <p className="text-slate-600 dark:text-slate-400">
+            Don&apos;t have an Admin account?{' '}
             <Link
-              href="/login"
-              className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:underline font-medium transition inline-flex items-center space-x-1"
+              href="/admin/signup"
+              className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 font-bold hover:underline transition inline-flex items-center space-x-1"
             >
-              <span>&larr; Back to Login Selection</span>
-            </Link>
-          </div>
-
-          <p className="text-slate-500 dark:text-slate-400">
-            Platform Owner?{' '}
-            <Link
-              href="/super-admin/login"
-              className="text-amber-600 dark:text-amber-400 hover:underline font-semibold transition inline-flex items-center space-x-1"
-            >
-              <Shield className="w-3.5 h-3.5 text-amber-500" />
-              <span>Super Admin Portal Login &rarr;</span>
+              <span>Create an Admin account &rarr;</span>
             </Link>
           </p>
         </div>

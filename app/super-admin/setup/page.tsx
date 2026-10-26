@@ -75,7 +75,7 @@ export default function SuperAdminSetupPage() {
 
       setSuccessMessage('Super Admin account provisioned! Redirecting to Login...');
       setTimeout(() => {
-        router.push('/login');
+        router.push('/super-admin/login?registered=true');
       }, 1200);
     } catch (err: any) {
       setErrorMessage(err.message || 'Network error communicating with server.');
@@ -271,7 +271,7 @@ export default function SuperAdminSetupPage() {
 
         <div className="pt-3 border-t border-slate-800 text-center text-xs">
           <Link
-            href="/login"
+            href="/super-admin/login"
             className="text-amber-400 hover:text-amber-300 font-medium transition"
           >
             Already have credentials? Return to Login &rarr;
