@@ -6,11 +6,14 @@ import { getServerSession, getUserDisplayName } from '@/lib/auth/session';
 import ThemeToggle from '@/components/ThemeToggle';
 import ThemeScript from '@/components/ThemeScript';
 import NavAuthLinks from '@/components/NavAuthLinks';
+import { Repository } from '@/lib/db/repository';
 
 export const metadata: Metadata = {
   title: 'VocNix – Real-Time Audio Translation Platform',
   description: 'Real-time human audio translation platform delivering browser microphone audio directly to audiences worldwide.',
 };
+
+export const dynamic = 'force-dynamic';
 
 export default async function RootLayout({
   children,
@@ -18,7 +21,19 @@ export default async function RootLayout({
   children: React.ReactNode;
 }) {
   const session = await getServerSession();
-  const displayName = getUserDisplayName(session);
+
+  // Authoritative database profile resolution
+  let dbProfile = null;
+  if (session?.userId) {
+    dbProfile = await Repository.getProfileById(session.userId);
+    if (!dbProfile && session.email) {
+      dbProfile = await Repository.getProfileByEmail(session.email);
+    }
+  }
+
+  const effectiveFullName = dbProfile?.full_name?.trim() || session?.full_name?.trim();
+  const effectiveAvatar = dbProfile?.avatar_url !== undefined ? dbProfile.avatar_url : (session?.avatar || null);
+  const displayName = effectiveFullName || getUserDisplayName(session);
   const isAuthUser = Boolean(session?.role === 'admin' || session?.role === 'super_admin');
 
   return (
@@ -68,7 +83,7 @@ export default async function RootLayout({
               )}
 
               {/* Dynamic Role-Based / Context-Aware Auth Links */}
-              <NavAuthLinks session={session} displayName={displayName} />
+              <NavAuthLinks session={session} displayName={displayName} initialAvatar={effectiveAvatar} />
 
               {/* Theme Switcher Toggle */}
               <div className="pl-1 sm:pl-2 border-l border-slate-200 dark:border-slate-800">

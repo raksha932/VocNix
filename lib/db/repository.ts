@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import bcrypt from 'bcryptjs';
 import {
   Organization,
@@ -39,6 +41,91 @@ interface DataStore {
 declare global {
   // eslint-disable-next-line no-var
   var __vocnix_store: DataStore | undefined;
+}
+
+
+// ========================================================
+// PERSISTENT DISK STORAGE FOR LOCAL REPOSITORY STATE
+// ========================================================
+function getDbFilePath(): string {
+  const dir = path.join(process.cwd(), 'data');
+  if (!fs.existsSync(dir)) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch {}
+  }
+  return path.join(dir, 'vocnix_db.json');
+}
+
+function persistStoreToDisk(s: DataStore) {
+  try {
+    const filePath = getDbFilePath();
+    const dataToSave = {
+      profiles: Array.from(s.profiles.entries()),
+      passwords: Array.from(s.passwords.entries()),
+      organizations: Array.from(s.organizations.entries()),
+      events: Array.from(s.events.entries()),
+      eventLanguages: Array.from(s.eventLanguages.entries()),
+      translationRooms: Array.from(s.translationRooms.entries()),
+      translators: Array.from(s.translators.entries()),
+      translatorAssignments: Array.from(s.translatorAssignments.entries()),
+    };
+    fs.writeFileSync(filePath, JSON.stringify(dataToSave, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('[Repository] Failed to persist store to disk:', err);
+  }
+}
+
+function loadStoreFromDisk(s: DataStore) {
+  try {
+    const filePath = getDbFilePath();
+    if (!fs.existsSync(filePath)) return;
+    const raw = fs.readFileSync(filePath, 'utf8');
+    if (!raw.trim()) return;
+    const parsed = JSON.parse(raw);
+    if (parsed.profiles && Array.isArray(parsed.profiles)) {
+      for (const [id, prof] of parsed.profiles) {
+        s.profiles.set(id, prof);
+      }
+    }
+    if (parsed.passwords && Array.isArray(parsed.passwords)) {
+      for (const [id, pass] of parsed.passwords) {
+        s.passwords.set(id, pass);
+      }
+    }
+    if (parsed.organizations && Array.isArray(parsed.organizations)) {
+      for (const [id, org] of parsed.organizations) {
+        s.organizations.set(id, org);
+      }
+    }
+    if (parsed.events && Array.isArray(parsed.events)) {
+      for (const [id, evt] of parsed.events) {
+        s.events.set(id, evt);
+      }
+    }
+    if (parsed.eventLanguages && Array.isArray(parsed.eventLanguages)) {
+      for (const [id, lang] of parsed.eventLanguages) {
+        s.eventLanguages.set(id, lang);
+      }
+    }
+    if (parsed.translationRooms && Array.isArray(parsed.translationRooms)) {
+      for (const [id, rm] of parsed.translationRooms) {
+        s.translationRooms.set(id, rm);
+      }
+    }
+    if (parsed.translators && Array.isArray(parsed.translators)) {
+      for (const [id, tr] of parsed.translators) {
+        s.translators.set(id, tr);
+      }
+    }
+    if (parsed.translatorAssignments && Array.isArray(parsed.translatorAssignments)) {
+      for (const [id, asgn] of parsed.translatorAssignments) {
+        s.translatorAssignments.set(id, asgn);
+      }
+    }
+  } catch (err) {
+    console.warn('[Repository] Failed to load store from disk:', err);
+  }
 }
 
 function initMemoryStore(): DataStore {
@@ -298,6 +385,7 @@ function initMemoryStore(): DataStore {
   store.translators.set(translator1.id, translator1);
   store.translators.set(translator2.id, translator2);
 
+  loadStoreFromDisk(store);
   return store;
 }
 
@@ -2796,6 +2884,7 @@ export const Repository = {
 
   async updatePassword(profileId: string, newPassword: string): Promise<boolean> {
     store.passwords.set(profileId, newPassword);
+    persistStoreToDisk(store);
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
       if (admin) {
@@ -2821,6 +2910,7 @@ export const Repository = {
     profile.updated_at = now;
 
     store.profiles.set(profile.id, profile);
+    persistStoreToDisk(store);
 
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();

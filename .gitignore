@@ -49,3 +49,6 @@ infra/.resend-email-key
 
 
 *.tsbuildinfo
+
+# Local persistent database file
+/data/

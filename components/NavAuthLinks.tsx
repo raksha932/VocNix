@@ -9,24 +9,69 @@ import { UserSession } from '@/lib/auth/session';
 interface NavAuthLinksProps {
   session: UserSession | null;
   displayName: string;
+  initialAvatar?: string | null;
 }
 
-export default function NavAuthLinks({ session, displayName }: NavAuthLinksProps) {
+export default function NavAuthLinks({ session, displayName, initialAvatar }: NavAuthLinksProps) {
   const pathname = usePathname() || '';
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [currentAvatar, setCurrentAvatar] = useState<string | null>(session?.avatar || null);
-  const [currentName, setCurrentName] = useState<string>(displayName);
+  const [currentAvatar, setCurrentAvatar] = useState<string | null>(initialAvatar !== undefined ? initialAvatar : (session?.avatar || null));
+  const [currentName, setCurrentName] = useState<string>(displayName && displayName !== 'User' ? displayName : '');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Sync with profile update events across the entire application
+  // Fallback role display name (never displays "User")
+  const fallbackRoleName = session?.role === 'super_admin' ? 'Super Admin' : 'Admin';
+  const nameToDisplay = currentName && currentName.trim() && currentName !== 'User'
+    ? currentName.trim()
+    : (displayName && displayName !== 'User' ? displayName : fallbackRoleName);
+
+  // Synchronize state when server props change (route transition or revalidation)
+  useEffect(() => {
+    if (displayName && displayName !== 'User') {
+      setCurrentName(displayName);
+    }
+    if (initialAvatar !== undefined) {
+      setCurrentAvatar(initialAvatar || null);
+    }
+  }, [displayName, initialAvatar]);
+
+  // Synchronize with backend database API on every page load and refresh
+  useEffect(() => {
+    let isMounted = true;
+    async function syncFromDb() {
+      try {
+        const res = await fetch('/api/profile');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.profile && isMounted) {
+            const savedName = data.profile.full_name || data.profile.username || data.profile.email;
+            if (savedName && savedName.trim()) {
+              setCurrentName(savedName.trim());
+            }
+            if (data.profile.avatar_url !== undefined) {
+              setCurrentAvatar(data.profile.avatar_url || null);
+            }
+          }
+        }
+      } catch (err) {
+        // Fallback to server props
+      }
+    }
+    syncFromDb();
+    return () => {
+      isMounted = false;
+    };
+  }, [pathname]);
+
+  // Sync with profile update events across the entire application in real-time
   useEffect(() => {
     const handleProfileUpdate = (e: any) => {
       if (e.detail) {
         if (e.detail.avatar_url !== undefined) {
-          setCurrentAvatar(e.detail.avatar_url);
+          setCurrentAvatar(e.detail.avatar_url || null);
         }
-        if (e.detail.full_name) {
-          setCurrentName(e.detail.full_name);
+        if (e.detail.full_name && e.detail.full_name.trim()) {
+          setCurrentName(e.detail.full_name.trim());
         }
       }
     };
@@ -83,18 +128,18 @@ export default function NavAuthLinks({ session, displayName }: NavAuthLinksProps
             {currentAvatar ? (
               <img
                 src={currentAvatar}
-                alt={currentName}
+                alt={nameToDisplay}
                 className="w-7 h-7 rounded-full object-cover border border-emerald-500/50 shrink-0 shadow-sm"
               />
             ) : (
               <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-emerald-500 to-emerald-600 flex items-center justify-center text-slate-950 font-bold text-xs shrink-0 shadow-sm">
-                {currentName ? currentName.charAt(0).toUpperCase() : 'A'}
+                {nameToDisplay ? nameToDisplay.charAt(0).toUpperCase() : 'A'}
               </div>
             )}
 
             {/* Admin Name - Rendered ONCE */}
             <span className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 group-hover:text-emerald-500 dark:group-hover:text-emerald-400 transition max-w-[140px] sm:max-w-[180px] truncate">
-              {currentName}
+              {nameToDisplay}
             </span>
 
             {/* Dropdown Chevron */}
@@ -149,18 +194,18 @@ export default function NavAuthLinks({ session, displayName }: NavAuthLinksProps
           {currentAvatar ? (
             <img
               src={currentAvatar}
-              alt={currentName}
+              alt={nameToDisplay}
               className="w-7 h-7 rounded-full object-cover border border-amber-500/50 shrink-0 shadow-sm"
             />
           ) : (
             <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-500 to-amber-600 flex items-center justify-center text-slate-950 font-bold text-xs shrink-0 shadow-sm">
-              {currentName ? currentName.charAt(0).toUpperCase() : 'S'}
+              {nameToDisplay ? nameToDisplay.charAt(0).toUpperCase() : 'S'}
             </div>
           )}
 
           {/* Super Admin Name - Rendered ONCE */}
           <span className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 group-hover:text-amber-500 dark:group-hover:text-amber-400 transition max-w-[140px] sm:max-w-[180px] truncate">
-            {currentName}
+            {nameToDisplay}
           </span>
 
           {/* Dropdown Chevron */}

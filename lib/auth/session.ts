@@ -27,9 +27,9 @@ export function getUserDisplayName(user?: {
   email?: string | null;
 } | null): string {
   if (!user) return 'User';
-  if (user.username && user.username.trim()) return user.username.trim();
   if (user.full_name && user.full_name.trim()) return user.full_name.trim();
   if (user.name && user.name.trim()) return user.name.trim();
+  if (user.username && user.username.trim()) return user.username.trim();
   if (user.email && user.email.trim()) return user.email.trim();
   return 'User';
 }
