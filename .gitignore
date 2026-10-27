@@ -47,3 +47,5 @@ infra/.supadb-key
 infra/.superadmin-credentials
 infra/.resend-email-key
 
+
+*.tsbuildinfo

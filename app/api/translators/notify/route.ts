@@ -67,10 +67,14 @@ export async function POST(req: NextRequest) {
 
     // 4. Send email via Resend
     if (!isResendConfigured()) {
+      console.warn(`[Resend Notice] RESEND_API_KEY is not configured. Direct booth link for ${cleanEmail}: ${roomUrl}`);
       return NextResponse.json({
-        success: false,
-        error: 'Resend email service is not configured. Please verify your API key in infra/.resend-email-key or environment variables.',
-      }, { status: 503 });
+        success: true,
+        configured: false,
+        simulated: true,
+        roomUrl,
+        message: `Assignment recorded for ${cleanEmail}! (Email delivery was skipped because Resend API key is not configured in .env.local). You can copy the direct booth link below.`,
+      });
     }
 
     const emailResult = await sendTranslatorAssignmentEmail({

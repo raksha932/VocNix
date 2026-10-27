@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs';
 import {
   Organization,
   Event,
@@ -96,68 +97,144 @@ function initMemoryStore(): DataStore {
   store.profiles.set(demoAdmin.id, demoAdmin);
   store.passwords.set(demoAdmin.id, 'admin123');
 
-  // Seed the 3 new subscription passes
-  const starterPlan: Plan = {
-    id: 'plan-starter',
-    name: 'Free Starter Pass',
+  // Seed the 4 subscription plans: Free, Pro, Pro Plus, and Pay-as-you-Go
+  const freePlan: Plan = {
+    id: 'plan-free',
+    name: 'Free Plan',
     slug: 'free',
-    max_events: 1,
-    max_concurrent_rooms: 3,
-    monthly_minute_quota: 60,
+    billing_period: '3 months',
+    max_events: 2,
+    max_concurrent_rooms: 2,
+    monthly_minute_quota: 120,
     price_cents: 0,
     price_inr: 0,
-    price_label: '₹0',
+    price_label: 'Free',
     duration_hours: 1,
-    duration_label: 'Up to 1 Hour live audio',
-    max_listeners: 25,
-    events_per_day_label: 'Max 1 Event / day',
-    key_capabilities: 'Dry-runs, technical tests, soundchecks, 1-on-1 translator trials',
+    duration_label: 'Max 60 mins per event',
+    max_event_duration_minutes: 60,
+    max_listeners: 50,
+    max_translators: 2,
+    max_languages: 2,
+    events_per_day_label: 'Max 2 events (3 months validity)',
+    key_capabilities: 'Trial broadcasts, 1-on-1 translator trials, technical soundchecks',
+    features: [
+      'Subscription duration: 3 months',
+      'Maximum duration per event: 60 minutes',
+      'Maximum events allowed: 2 events',
+      'Audience limit: 50 members per event',
+      'Maximum translators: 2',
+      'Maximum languages allowed: 2',
+    ],
     created_at: new Date().toISOString(),
   };
-  const singleEventPlan: Plan = {
-    id: 'plan-single-event',
-    name: 'Single Event Pass',
-    slug: 'single-event',
+
+  const proPlan: Plan = {
+    id: 'plan-pro',
+    name: 'Pro Plan',
+    slug: 'pro',
+    billing_period: 'month',
+    max_events: 999,
+    max_concurrent_rooms: 5,
+    monthly_minute_quota: 3600,
+    price_cents: 200000,
+    price_inr: 2000,
+    price_label: '₹2,000 / month',
+    duration_hours: 2,
+    duration_label: 'Max 120 mins per event',
+    max_event_duration_minutes: 120,
+    max_listeners: 100,
+    max_translators: 5,
+    max_languages: 10,
+    events_per_day_label: 'Unlimited events',
+    key_capabilities: 'Regular corporate meetings, seminars, webinars, educational sessions',
+    features: [
+      'Includes all Free Plan features',
+      'Maximum duration per event: 120 minutes',
+      'Audience limit: 100 members per event',
+      'Maximum translators: 5',
+      'Unlimited events per month',
+    ],
+    created_at: new Date().toISOString(),
+  };
+
+  const proPlusPlan: Plan = {
+    id: 'plan-pro-plus',
+    name: 'Pro Plus Plan',
+    slug: 'pro-plus',
+    billing_period: 'month',
+    max_events: 999,
+    max_concurrent_rooms: 10,
+    monthly_minute_quota: 999999,
+    price_cents: 400000,
+    price_inr: 4000,
+    price_label: '₹4,000 / month',
+    duration_hours: 999,
+    duration_label: 'Unlimited minutes per event',
+    max_event_duration_minutes: 0,
+    max_listeners: 1000,
+    max_translators: 10,
+    max_languages: 20,
+    events_per_day_label: 'Unlimited events',
+    audience_support_note: 'Contact Support for higher audience limits.',
+    key_capabilities: 'Large summits, multi-track conferences, international conventions',
+    features: [
+      'Includes all Pro Plan features',
+      'Event duration: Unlimited minutes per event',
+      'Audience limit: 1,000 members per event',
+      'Maximum translators: 10',
+      'Contact Support for higher audience limits.',
+    ],
+    created_at: new Date().toISOString(),
+  };
+
+  const payAsYouGoPlan: Plan = {
+    id: 'plan-pay-as-you-go',
+    name: 'Pay-as-you-Go Plan',
+    slug: 'pay-as-you-go',
+    billing_period: 'event',
     max_events: 1,
     max_concurrent_rooms: 10,
-    monthly_minute_quota: 180,
-    price_cents: 299900,
-    price_inr: 2999,
-    price_label: '₹2,999 (+ GST)',
-    duration_hours: 3,
-    duration_label: 'Up to 3 Hours live audio',
-    max_listeners: 150,
-    events_per_day_label: 'Max 1 Event / day',
-    key_capabilities: 'Product launches, keynotes, single-session seminars, town halls',
+    monthly_minute_quota: 120,
+    price_cents: 250000,
+    price_inr: 2500,
+    price_label: '₹2,500 / event',
+    duration_hours: 2,
+    duration_label: '120 mins included per event',
+    max_event_duration_minutes: 120,
+    max_listeners: 1000,
+    max_translators: 10,
+    max_languages: 10,
+    events_per_day_label: 'Pay per event',
+    additional_duration_rate: {
+      block_minutes: 30,
+      price_inr: 250,
+    },
+    key_capabilities: 'One-off events, single-session seminars, town halls with scalable duration',
+    features: [
+      'Price: ₹2,500 per event',
+      'Included event duration: 120 minutes',
+      'Audience limit: 1,000 members per event',
+      'Maximum translators: 10',
+      'Additional duration: ₹250 for every additional 30 minutes',
+    ],
     created_at: new Date().toISOString(),
   };
-  const fullDayPlan: Plan = {
-    id: 'plan-full-day',
-    name: 'Full Day Pass',
-    slug: 'full-day',
-    max_events: 999,
-    max_concurrent_rooms: 25,
-    monthly_minute_quota: 480,
-    price_cents: 799900,
-    price_inr: 7999,
-    price_label: '₹7,999 (+ GST)',
-    duration_hours: 8,
-    duration_label: 'Up to 8 Hours live audio',
-    max_listeners: 500,
-    events_per_day_label: 'Unlimited events per day',
-    key_capabilities: 'Full-day corporate conferences, medical summits, trade meets',
-    created_at: new Date().toISOString(),
-  };
-  store.plans.set(starterPlan.id, starterPlan);
-  store.plans.set(singleEventPlan.id, singleEventPlan);
-  store.plans.set(fullDayPlan.id, fullDayPlan);
+
+  store.plans.set(freePlan.id, freePlan);
+  store.plans.set(proPlan.id, proPlan);
+  store.plans.set(proPlusPlan.id, proPlusPlan);
+  store.plans.set(payAsYouGoPlan.id, payAsYouGoPlan);
+  // Aliases for legacy plan IDs
+  store.plans.set('plan-starter', freePlan);
+  store.plans.set('plan-single-event', proPlan);
+  store.plans.set('plan-full-day', proPlusPlan);
 
   // Default Primary Organization
   const defaultOrg: Organization = {
     id: '00000000-0000-0000-0000-000000000001',
     name: 'Acme Global Events',
     slug: 'acme-global',
-    plan_id: singleEventPlan.id,
+    plan_id: freePlan.id,
     status: 'active',
     admin_name: 'Platform Admin',
     admin_email: 'admin@vocnix.com',
@@ -173,7 +250,7 @@ function initMemoryStore(): DataStore {
     id: '00000000-0000-0000-0000-000000000002',
     name: 'Summit Global Tech',
     slug: 'summit-tech',
-    plan_id: fullDayPlan.id,
+    plan_id: proPlan.id,
     status: 'active',
     admin_name: 'Demo Summit Admin',
     admin_email: 'admin@demo-summit.com',
@@ -1070,17 +1147,18 @@ export const Repository = {
     return { session, usageMinutes: durationMinutes };
   },
 
-  // AUDIENCE LISTENERS
+  // AUDIENCE LISTENERS (Accurate Unique Counting & Real-time Stale Eviction)
   async recalculateRoomListenerCount(roomId: string): Promise<number> {
     const now = new Date().toISOString();
+    const staleThresholdMs = Date.now() - 35 * 1000; // 35-second heartbeat window
 
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
       if (admin) {
-        // Query distinct active sessions from audience_sessions
+        // Query active sessions from Supabase
         const { data: activeList, error: qErr } = await admin
           .from('audience_sessions')
-          .select('session_key')
+          .select('id, session_key, joined_at')
           .eq('translation_room_id', roomId)
           .is('left_at', null);
 
@@ -1088,20 +1166,15 @@ export const Repository = {
           console.error(`[Repository] Error querying active sessions for room ${roomId}:`, qErr);
         }
 
-        const uniqueKeys = new Set((activeList || []).map((s: any) => s.session_key));
+        const sessions = activeList || [];
+        const uniqueKeys = new Set(sessions.map((s: any) => s.session_key));
         const count = uniqueKeys.size;
 
-        // Persist directly to Supabase translation_rooms.active_listener_count
-        const { error: uErr } = await admin
+        await admin
           .from('translation_rooms')
           .update({ active_listener_count: count, updated_at: now })
           .eq('id', roomId);
 
-        if (uErr) {
-          console.error(`[Repository] Error updating active_listener_count for room ${roomId}:`, uErr);
-        }
-
-        // Update memory cache
         const room = store.translationRooms.get(roomId);
         if (room) {
           room.active_listener_count = count;
@@ -1113,9 +1186,28 @@ export const Repository = {
       }
     }
 
-    const count = Array.from(store.audienceSessions.values()).filter(
-      s => s.translation_room_id === roomId && !s.left_at
-    ).length;
+    // Memory Store: Evict any inactive session that hasn't heartbeated or joined recently
+    for (const aud of Array.from(store.audienceSessions.values())) {
+      if (aud.translation_room_id === roomId && !aud.left_at) {
+        const lastActive = aud.last_heartbeat_at
+          ? new Date(aud.last_heartbeat_at).getTime()
+          : new Date(aud.joined_at).getTime();
+        if (lastActive < staleThresholdMs) {
+          aud.left_at = now;
+          store.audienceSessions.set(aud.id, aud);
+        }
+      }
+    }
+
+    // Count strictly unique active session keys
+    const uniqueSessionKeys = new Set<string>();
+    for (const aud of store.audienceSessions.values()) {
+      if (aud.translation_room_id === roomId && !aud.left_at) {
+        uniqueSessionKeys.add(aud.session_key);
+      }
+    }
+
+    const count = uniqueSessionKeys.size;
     const room = store.translationRooms.get(roomId);
     if (room) {
       room.active_listener_count = count;
@@ -1131,7 +1223,7 @@ export const Repository = {
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
       if (admin) {
-        // 1. Close any older active session for this sessionKey in a different room (e.g. if switched channel)
+        // 1. Close any older active session for this sessionKey in a different room
         const { data: prevSessions } = await admin
           .from('audience_sessions')
           .select('translation_room_id')
@@ -1176,34 +1268,38 @@ export const Repository = {
 
         // 3. Atomically recalculate and persist active listener count for this room in Supabase
         const count = await this.recalculateRoomListenerCount(roomId);
-        return Math.max(1, count);
+        return count;
       }
     }
 
     // Memory store fallback
-    // Close session in other rooms for this sessionKey
+    // 1. Close session in other rooms for this sessionKey
     for (const aud of Array.from(store.audienceSessions.values())) {
       if (aud.session_key === sessionKey && aud.translation_room_id !== roomId && !aud.left_at) {
         aud.left_at = now;
         store.audienceSessions.set(aud.id, aud);
         const prevRoom = store.translationRooms.get(aud.translation_room_id);
         if (prevRoom) {
-          prevRoom.active_listener_count = Math.max(0, (prevRoom.active_listener_count || 1) - 1);
-          prevRoom.updated_at = now;
+          await this.recalculateRoomListenerCount(aud.translation_room_id);
         }
       }
     }
 
+    // 2. Check if already active in this room (prevent duplicates)
     const existing = Array.from(store.audienceSessions.values()).find(
       s => s.translation_room_id === roomId && s.session_key === sessionKey && !s.left_at
     );
 
-    if (!existing) {
+    if (existing) {
+      existing.last_heartbeat_at = now;
+      store.audienceSessions.set(existing.id, existing);
+    } else {
       const audSession: AudienceSession = {
         id: randomUUID(),
         translation_room_id: roomId,
         session_key: sessionKey,
         joined_at: now,
+        last_heartbeat_at: now,
         ip_hash: meta?.ip ? meta.ip.slice(0, 10) : undefined,
         user_agent: meta?.ua,
         created_at: now,
@@ -1211,18 +1307,7 @@ export const Repository = {
       store.audienceSessions.set(audSession.id, audSession);
     }
 
-    const count = Array.from(store.audienceSessions.values()).filter(
-      s => s.translation_room_id === roomId && !s.left_at
-    ).length;
-
-    let room = store.translationRooms.get(roomId);
-    if (room) {
-      room.active_listener_count = count;
-      room.updated_at = now;
-      store.translationRooms.set(roomId, room);
-    }
-
-    return count;
+    return this.recalculateRoomListenerCount(roomId);
   },
 
   async registerAudienceLeave(roomId: string, sessionKey: string): Promise<number> {
@@ -1238,13 +1323,9 @@ export const Repository = {
           .eq('session_key', sessionKey)
           .is('left_at', null);
 
-        const count = await this.recalculateRoomListenerCount(roomId);
-        return count;
+        return this.recalculateRoomListenerCount(roomId);
       }
     }
-
-    let room = store.translationRooms.get(roomId);
-    if (!room) return 0;
 
     for (const audSession of Array.from(store.audienceSessions.values())) {
       if (audSession.translation_room_id === roomId && audSession.session_key === sessionKey && !audSession.left_at) {
@@ -1253,15 +1334,7 @@ export const Repository = {
       }
     }
 
-    const count = Array.from(store.audienceSessions.values()).filter(
-      s => s.translation_room_id === roomId && !s.left_at
-    ).length;
-
-    room.active_listener_count = count;
-    room.updated_at = now;
-    store.translationRooms.set(roomId, room);
-
-    return count;
+    return this.recalculateRoomListenerCount(roomId);
   },
 
   async registerAudienceHeartbeat(roomId: string, sessionKey: string): Promise<number> {
@@ -1289,44 +1362,44 @@ export const Repository = {
           });
         }
 
-        // Clean up stale sessions that haven't left and joined > 2 hours ago
-        const staleThreshold = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-        const { data: staleSessions } = await admin
-          .from('audience_sessions')
-          .select('id')
-          .eq('translation_room_id', roomId)
-          .is('left_at', null)
-          .lt('joined_at', staleThreshold);
-
-        if (staleSessions && staleSessions.length > 0) {
-          await admin
-            .from('audience_sessions')
-            .update({ left_at: now })
-            .eq('translation_room_id', roomId)
-            .is('left_at', null)
-            .lt('joined_at', staleThreshold);
-        }
-
-        const count = await this.recalculateRoomListenerCount(roomId);
-        return count;
+        return this.recalculateRoomListenerCount(roomId);
       }
     }
 
-    return this.getActiveListenerCount(roomId);
+    const existing = Array.from(store.audienceSessions.values()).find(
+      s => s.translation_room_id === roomId && s.session_key === sessionKey && !s.left_at
+    );
+
+    if (existing) {
+      existing.last_heartbeat_at = now;
+      store.audienceSessions.set(existing.id, existing);
+    } else {
+      const audSession: AudienceSession = {
+        id: randomUUID(),
+        translation_room_id: roomId,
+        session_key: sessionKey,
+        joined_at: now,
+        last_heartbeat_at: now,
+        created_at: now,
+      };
+      store.audienceSessions.set(audSession.id, audSession);
+    }
+
+    return this.recalculateRoomListenerCount(roomId);
+  },
+
+  
+  async getActiveEventListeners(eventId: string): Promise<number> {
+    const rooms = Array.from(store.translationRooms.values()).filter(r => r.event_id === eventId);
+    let total = 0;
+    for (const r of rooms) {
+      total += await this.recalculateRoomListenerCount(r.id);
+    }
+    return total;
   },
 
   async getActiveListenerCount(roomId: string): Promise<number> {
-    if (isSupabaseConfigured()) {
-      const admin = getSupabaseAdmin();
-      if (admin) {
-        const count = await this.recalculateRoomListenerCount(roomId);
-        return count;
-      }
-    }
-
-    return Array.from(store.audienceSessions.values()).filter(
-      s => s.translation_room_id === roomId && !s.left_at
-    ).length;
+    return this.recalculateRoomListenerCount(roomId);
   },
 
   // USAGE & BILLING ENFORCEMENT
@@ -1494,58 +1567,14 @@ export const Repository = {
     const liveRooms = rooms.filter((r) => r.status === 'live');
     const roomIds = rooms.map((r) => r.id);
 
-    // Map each room's active listener count
+    // Map each room's authoritative active listener count (evicting stale and deduplicating)
     const roomListenerCounts: Record<string, number> = {};
+    let totalLiveListeners = 0;
+
     for (const r of rooms) {
-      roomListenerCounts[r.id] = r.active_listener_count || 0;
-    }
-
-    let totalLiveListeners = rooms.reduce((acc, r) => acc + (r.active_listener_count || 0), 0);
-
-    // Authoritative check against audience_sessions in Supabase
-    if (isSupabaseConfigured() && roomIds.length > 0) {
-      const admin = getSupabaseAdmin();
-      if (admin) {
-        try {
-          const { data: activeAudience } = await admin
-            .from('audience_sessions')
-            .select('translation_room_id, session_key')
-            .in('translation_room_id', roomIds)
-            .is('left_at', null);
-
-          if (activeAudience) {
-            const roomSessionsMap: Record<string, Set<string>> = {};
-            for (const rId of roomIds) {
-              roomSessionsMap[rId] = new Set();
-            }
-            for (const s of activeAudience) {
-              if (!roomSessionsMap[s.translation_room_id]) {
-                roomSessionsMap[s.translation_room_id] = new Set();
-              }
-              roomSessionsMap[s.translation_room_id].add(s.session_key);
-            }
-
-            let computedTotal = 0;
-            for (const r of rooms) {
-              const liveCount = roomSessionsMap[r.id] ? roomSessionsMap[r.id].size : 0;
-              roomListenerCounts[r.id] = liveCount;
-              computedTotal += liveCount;
-              // Synchronize room table if drifted
-              if (r.active_listener_count !== liveCount) {
-                admin
-                  .from('translation_rooms')
-                  .update({ active_listener_count: liveCount, updated_at: new Date().toISOString() })
-                  .eq('id', r.id)
-                  .then();
-                r.active_listener_count = liveCount;
-              }
-            }
-            totalLiveListeners = computedTotal;
-          }
-        } catch (err) {
-          console.error('[Repository] getDashboardStats error syncing audience sessions:', err);
-        }
-      }
+      const liveCount = await this.recalculateRoomListenerCount(r.id);
+      roomListenerCounts[r.id] = liveCount;
+      totalLiveListeners += liveCount;
     }
 
     const usage = await this.getOrganizationUsage(organizationId, roomIds);
@@ -1598,6 +1627,36 @@ export const Repository = {
     store.organizations.set(orgId, org);
     await this.logActivity(orgId, 'ORGANIZATION_UPDATED', `Organization details updated to "${org.name}"`);
     return org;
+  },
+
+  async deleteOrganization(orgId: string): Promise<boolean> {
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        try {
+          await admin.from('organizations').delete().eq('id', orgId);
+        } catch (err) {
+          console.error('[Repository] Supabase deleteOrganization error:', err);
+        }
+      }
+    }
+    const org = store.organizations.get(orgId);
+    store.organizations.delete(orgId);
+    for (const [eventId, ev] of Array.from(store.events.entries())) {
+      if (ev.organization_id === orgId) {
+        store.events.delete(eventId);
+        for (const [roomId, room] of Array.from(store.translationRooms.entries())) {
+          if (room.event_id === eventId) store.translationRooms.delete(roomId);
+        }
+      }
+    }
+    for (const [profId, p] of Array.from(store.profiles.entries())) {
+      if ((p as any).organization_id === orgId) store.profiles.delete(profId);
+    }
+    for (const [trnId, trn] of Array.from(store.translators.entries())) {
+      if (trn.organization_id === orgId) store.translators.delete(trnId);
+    }
+    return true;
   },
 
   // 2. EDIT EVENTS
@@ -1784,63 +1843,190 @@ export const Repository = {
 
   // 5. MANAGE SUBSCRIPTIONS & PLANS
   async getPlans(): Promise<Plan[]> {
-    const starterPlan: Plan = {
-      id: 'plan-starter',
-      name: 'Free Starter Pass',
+    const freePlan: Plan = {
+      id: 'plan-free',
+      name: 'Free Plan',
       slug: 'free',
-      max_events: 1,
-      max_concurrent_rooms: 3,
-      monthly_minute_quota: 60,
+      billing_period: '3 months',
+      max_events: 2,
+      max_concurrent_rooms: 2,
+      monthly_minute_quota: 120,
       price_cents: 0,
       price_inr: 0,
-      price_label: '₹0',
+      price_label: 'Free',
       duration_hours: 1,
-      duration_label: 'Up to 1 Hour live audio',
-      max_listeners: 25,
-      events_per_day_label: 'Max 1 Event / day',
-      key_capabilities: 'Dry-runs, technical tests, soundchecks, 1-on-1 translator trials',
+      duration_label: 'Max 60 mins per event',
+      max_event_duration_minutes: 60,
+      max_listeners: 50,
+      max_translators: 2,
+      max_languages: 2,
+      events_per_day_label: 'Max 2 events (3 months validity)',
+      key_capabilities: 'Trial broadcasts, 1-on-1 translator trials, technical soundchecks',
+      features: [
+        'Subscription duration: 3 months',
+        'Maximum duration per event: 60 minutes',
+        'Maximum events allowed: 2 events',
+        'Audience limit: 50 members per event',
+        'Maximum translators: 2',
+        'Maximum languages allowed: 2',
+      ],
       created_at: new Date().toISOString(),
     };
-    const singleEventPlan: Plan = {
-      id: 'plan-single-event',
-      name: 'Single Event Pass',
-      slug: 'single-event',
+
+    const proPlan: Plan = {
+      id: 'plan-pro',
+      name: 'Pro Plan',
+      slug: 'pro',
+      billing_period: 'month',
+      max_events: 999,
+      max_concurrent_rooms: 5,
+      monthly_minute_quota: 3600,
+      price_cents: 200000,
+      price_inr: 2000,
+      price_label: '₹2,000 / month',
+      duration_hours: 2,
+      duration_label: 'Max 120 mins per event',
+      max_event_duration_minutes: 120,
+      max_listeners: 100,
+      max_translators: 5,
+      max_languages: 10,
+      events_per_day_label: 'Unlimited events',
+      key_capabilities: 'Regular corporate meetings, seminars, webinars, educational sessions',
+      features: [
+        'Includes all Free Plan features',
+        'Maximum duration per event: 120 minutes',
+        'Audience limit: 100 members per event',
+        'Maximum translators: 5',
+        'Unlimited events per month',
+      ],
+      created_at: new Date().toISOString(),
+    };
+
+    const proPlusPlan: Plan = {
+      id: 'plan-pro-plus',
+      name: 'Pro Plus Plan',
+      slug: 'pro-plus',
+      billing_period: 'month',
+      max_events: 999,
+      max_concurrent_rooms: 10,
+      monthly_minute_quota: 999999,
+      price_cents: 400000,
+      price_inr: 4000,
+      price_label: '₹4,000 / month',
+      duration_hours: 999,
+      duration_label: 'Unlimited minutes per event',
+      max_event_duration_minutes: 0,
+      max_listeners: 1000,
+      max_translators: 10,
+      max_languages: 20,
+      events_per_day_label: 'Unlimited events',
+      audience_support_note: 'Contact Support for higher audience limits.',
+      key_capabilities: 'Large summits, multi-track conferences, international conventions',
+      features: [
+        'Includes all Pro Plan features',
+        'Event duration: Unlimited minutes per event',
+        'Audience limit: 1,000 members per event',
+        'Maximum translators: 10',
+        'Contact Support for higher audience limits.',
+      ],
+      created_at: new Date().toISOString(),
+    };
+
+    const payAsYouGoPlan: Plan = {
+      id: 'plan-pay-as-you-go',
+      name: 'Pay-as-you-Go Plan',
+      slug: 'pay-as-you-go',
+      billing_period: 'event',
       max_events: 1,
       max_concurrent_rooms: 10,
-      monthly_minute_quota: 180,
-      price_cents: 299900,
-      price_inr: 2999,
-      price_label: '₹2,999 (+ GST)',
-      duration_hours: 3,
-      duration_label: 'Up to 3 Hours live audio',
-      max_listeners: 150,
-      events_per_day_label: 'Max 1 Event / day',
-      key_capabilities: 'Product launches, keynotes, single-session seminars, town halls',
-      created_at: new Date().toISOString(),
-    };
-    const fullDayPlan: Plan = {
-      id: 'plan-full-day',
-      name: 'Full Day Pass',
-      slug: 'full-day',
-      max_events: 999,
-      max_concurrent_rooms: 25,
-      monthly_minute_quota: 480,
-      price_cents: 799900,
-      price_inr: 7999,
-      price_label: '₹7,999 (+ GST)',
-      duration_hours: 8,
-      duration_label: 'Up to 8 Hours live audio',
-      max_listeners: 500,
-      events_per_day_label: 'Unlimited events per day',
-      key_capabilities: 'Full-day corporate conferences, medical summits, trade meets',
+      monthly_minute_quota: 120,
+      price_cents: 250000,
+      price_inr: 2500,
+      price_label: '₹2,500 / event',
+      duration_hours: 2,
+      duration_label: '120 mins included per event',
+      max_event_duration_minutes: 120,
+      max_listeners: 1000,
+      max_translators: 10,
+      max_languages: 10,
+      events_per_day_label: 'Pay per event',
+      additional_duration_rate: {
+        block_minutes: 30,
+        price_inr: 250,
+      },
+      key_capabilities: 'One-off events, single-session seminars, town halls with scalable duration',
+      features: [
+        'Price: ₹2,500 per event',
+        'Included event duration: 120 minutes',
+        'Audience limit: 1,000 members per event',
+        'Maximum translators: 10',
+        'Additional duration: ₹250 for every additional 30 minutes',
+      ],
       created_at: new Date().toISOString(),
     };
 
-    store.plans.set(starterPlan.id, starterPlan);
-    store.plans.set(singleEventPlan.id, singleEventPlan);
-    store.plans.set(fullDayPlan.id, fullDayPlan);
+    store.plans.set(freePlan.id, freePlan);
+    store.plans.set(proPlan.id, proPlan);
+    store.plans.set(proPlusPlan.id, proPlusPlan);
+    store.plans.set(payAsYouGoPlan.id, payAsYouGoPlan);
+    // Legacy compatibility aliases
+    store.plans.set('plan-starter', freePlan);
+    store.plans.set('plan-single-event', proPlan);
+    store.plans.set('plan-full-day', proPlusPlan);
 
-    return [starterPlan, singleEventPlan, fullDayPlan];
+    return [freePlan, proPlan, proPlusPlan, payAsYouGoPlan];
+  },
+
+  
+  calculatePayAsYouGoCost(eventDurationMinutes: number): {
+    basePrice: number;
+    includedMinutes: number;
+    additionalMinutes: number;
+    additionalBlocks: number;
+    additionalCost: number;
+    totalPrice: number;
+  } {
+    const basePrice = 2500;
+    const includedMinutes = 120;
+    if (eventDurationMinutes <= includedMinutes) {
+      return {
+        basePrice,
+        includedMinutes,
+        additionalMinutes: 0,
+        additionalBlocks: 0,
+        additionalCost: 0,
+        totalPrice: basePrice,
+      };
+    }
+    const additionalMinutes = eventDurationMinutes - includedMinutes;
+    const additionalBlocks = Math.ceil(additionalMinutes / 30);
+    const additionalCost = additionalBlocks * 250;
+    return {
+      basePrice,
+      includedMinutes,
+      additionalMinutes,
+      additionalBlocks,
+      additionalCost,
+      totalPrice: basePrice + additionalCost,
+    };
+  },
+
+  async getPlanById(planId: string): Promise<Plan | null> {
+    const plans = await this.getPlans();
+    if (planId === 'plan-starter') return plans.find(p => p.slug === 'free') || plans[0];
+    if (planId === 'plan-single-event') return plans.find(p => p.slug === 'pro') || plans[1];
+    if (planId === 'plan-full-day') return plans.find(p => p.slug === 'pro-plus') || plans[2];
+    return plans.find(p => p.id === planId || p.slug === planId) || null;
+  },
+
+  async getOrganizationPlan(organizationId: string): Promise<Plan> {
+    const org = store.organizations.get(organizationId) || (await this.getDefaultOrganization());
+    const plans = await this.getPlans();
+    if (org?.plan_id) {
+      const plan = await this.getPlanById(org.plan_id);
+      if (plan) return plan;
+    }
+    return plans[0];
   },
 
   async upgradeSubscription(organizationId: string, planSlug: string): Promise<{ org: Organization; invoice: any }> {
@@ -1956,7 +2142,7 @@ export const Repository = {
         cleanEmail.split('@')[0].replace(/[^a-z0-9_]/gi, '') || 'admin'
       ).toLowerCase() + `_${randomBytes(2).toString('hex')}`;
 
-      let adminId = randomUUID();
+      let adminId: string = randomUUID();
       const initialPassword = 'Admin123!';
 
       if (isSupabaseConfigured()) {
@@ -2606,6 +2792,53 @@ export const Repository = {
       );
     }
     return false;
+  },
+
+  async updatePassword(profileId: string, newPassword: string): Promise<boolean> {
+    store.passwords.set(profileId, newPassword);
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        try {
+          await admin.auth.admin.updateUserById(profileId, { password: newPassword });
+        } catch (err) {}
+      }
+    }
+    return true;
+  },
+
+  async updateProfile(profileId: string, updates: { full_name?: string; avatar_url?: string; email?: string }): Promise<Profile | null> {
+    const now = new Date().toISOString();
+    let profile: Profile | null | undefined = store.profiles.get(profileId);
+    if (!profile) {
+      profile = await this.getProfileById(profileId);
+    }
+    if (!profile) return null;
+
+    if (updates.full_name !== undefined) profile.full_name = updates.full_name.trim();
+    if (updates.avatar_url !== undefined) profile.avatar_url = updates.avatar_url;
+    if (updates.email !== undefined) profile.email = updates.email.trim().toLowerCase();
+    profile.updated_at = now;
+
+    store.profiles.set(profile.id, profile);
+
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        try {
+          await admin.from('profiles').update({
+            full_name: profile.full_name,
+            avatar_url: profile.avatar_url,
+            email: profile.email,
+            updated_at: now,
+          }).eq('id', profile.id);
+        } catch (err) {
+          console.warn('[Repository] updateProfile Supabase error:', err);
+        }
+      }
+    }
+
+    return profile;
   },
 
   async hasSuperAdmin(): Promise<boolean> {

@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json(
       { success: false, error: err.message || 'Failed to fetch events' },
-      { status: 500, headers: NO_CACHE_HEADERS }
+      { status: 400, headers: NO_CACHE_HEADERS }
     );
   }
 }

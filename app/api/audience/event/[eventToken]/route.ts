@@ -47,7 +47,31 @@ export async function GET(
       };
     });
 
-    return NextResponse.json({
+    // Language-specific audience link resolution:
+    // If ?lang= or ?room= is passed, prioritize the explicit language requested by the translator's share link
+    const requestedLangParam = req.nextUrl.searchParams.get('lang')?.toLowerCase().trim();
+    const requestedRoomParam = req.nextUrl.searchParams.get('room')?.trim();
+
+    let resolvedLockedRoomId = lockedRoomId;
+    let matchedRequestedLang = null;
+
+    if (requestedLangParam) {
+      matchedRequestedLang = languages.find(
+        (l) =>
+          l.languageCode.toLowerCase() === requestedLangParam ||
+          l.languageName.toLowerCase() === requestedLangParam
+      );
+      if (matchedRequestedLang?.roomId) {
+        resolvedLockedRoomId = matchedRequestedLang.roomId;
+      }
+    } else if (requestedRoomParam) {
+      matchedRequestedLang = languages.find((l) => l.roomId === requestedRoomParam);
+      if (matchedRequestedLang?.roomId) {
+        resolvedLockedRoomId = matchedRequestedLang.roomId;
+      }
+    }
+
+    const response = NextResponse.json({
       success: true,
       event: {
         id: event.id,
@@ -57,8 +81,29 @@ export async function GET(
         scheduledStart: event.scheduled_start,
       },
       languages,
-      lockedRoomId,
+      lockedRoomId: resolvedLockedRoomId,
+      requestedLanguage: matchedRequestedLang,
     });
+
+    // If an explicit language channel was accessed, establish the lock cookie immediately
+    if (matchedRequestedLang?.roomId) {
+      const forwardedProto = req.headers.get('x-forwarded-proto');
+      const host = req.headers.get('host') || '';
+      const isHttps =
+        forwardedProto === 'https' ||
+        (process.env.NODE_ENV === 'production' &&
+          !host.includes('localhost') &&
+          !host.includes('127.0.0.1'));
+      response.cookies.set(lockCookieName, matchedRequestedLang.roomId, {
+        httpOnly: true,
+        secure: isHttps,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 24 * 60 * 60,
+      });
+    }
+
+    return response;
   } catch (err: any) {
     return NextResponse.json(
       { success: false, error: err.message || 'Internal server error' },

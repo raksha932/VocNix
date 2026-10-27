@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
     const translators = await Repository.getTranslators(org.id);
     return NextResponse.json({ success: true, translators });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: err.message }, { status: 400 });
   }
 }
 

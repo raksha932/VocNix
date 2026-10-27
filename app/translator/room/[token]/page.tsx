@@ -83,9 +83,7 @@ export default function TranslatorRoomPage() {
     const service = new AudioService({
       onConnectionChange: (status) => setConnectionStatus(status),
       onParticipantCountChange: (count) => {
-        if (count > 0) {
-          setListenerCount((prev) => Math.max(prev, count));
-        }
+        setListenerCount(Math.max(0, count));
       },
       onAudioLevelChange: (level) => setAudioLevel(level),
       onError: (err) => setError(err.message),
@@ -180,27 +178,13 @@ export default function TranslatorRoomPage() {
     if (!roomData?.id) return;
     const interval = setInterval(async () => {
       try {
-        // 1. Direct dedicated room stats
         const res = await fetch(`/api/rooms/${roomData.id}/stats`, { cache: 'no-store' });
         const data = await res.json();
         if (data.success && typeof data.listenerCount === 'number') {
           setListenerCount(data.listenerCount);
-        } else {
-          // 2. Fallback to /api/events
-          const evRes = await fetch(`/api/events`, { cache: 'no-store' });
-          const evData = await evRes.json();
-          if (evData.success && evData.events) {
-            for (const ev of evData.events) {
-              const foundRoom = ev.rooms?.find((r: any) => r.id === roomData.id);
-              if (foundRoom) {
-                setListenerCount(foundRoom.active_listener_count || 0);
-                break;
-              }
-            }
-          }
         }
       } catch {}
-    }, 3000);
+    }, 2000);
     return () => clearInterval(interval);
   }, [roomData?.id]);
 
@@ -396,7 +380,7 @@ export default function TranslatorRoomPage() {
 
   // Audience Link Share logic
   const audienceUrl = typeof window !== 'undefined' && roomData?.eventPublicToken
-    ? `${window.location.origin}/listen/${roomData.eventPublicToken}`
+    ? `${window.location.origin}/listen/${roomData.eventPublicToken}?lang=${encodeURIComponent(roomData.languageCode)}`
     : '';
 
   useEffect(() => {
@@ -832,9 +816,16 @@ export default function TranslatorRoomPage() {
               <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto shadow-inner">
                 <Share2 className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-bold text-white tracking-tight">Share Audience Link</h3>
+              <div className="flex items-center justify-center space-x-2">
+                <h3 className="text-xl font-bold text-white tracking-tight">Share Audience Link</h3>
+                {roomData?.languageName && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-bold border border-emerald-500/30">
+                    {roomData.languageName}
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-400 max-w-xs mx-auto">
-                Audience members open this link, select their preferred language, and enter their dedicated live audio stream.
+                Audience members open this link and directly enter their dedicated {roomData?.languageName || 'selected'} live audio stream with strict single-language access.
               </p>
             </div>
 

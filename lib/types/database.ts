@@ -26,6 +26,7 @@ export interface Plan {
   id: string;
   name: string;
   slug: string;
+  billing_period?: string;
   max_events: number;
   max_concurrent_rooms: number;
   monthly_minute_quota: number;
@@ -34,9 +35,18 @@ export interface Plan {
   price_label?: string;
   duration_hours?: number;
   duration_label?: string;
+  max_event_duration_minutes?: number;
   max_listeners?: number;
+  max_translators?: number;
+  max_languages?: number;
   events_per_day_label?: string;
   key_capabilities?: string;
+  audience_support_note?: string;
+  additional_duration_rate?: {
+    block_minutes: number;
+    price_inr: number;
+  };
+  features?: string[];
   created_at: string;
 }
 
@@ -142,6 +152,7 @@ export interface AudienceSession {
   session_key: string;
   joined_at: string;
   left_at?: string;
+  last_heartbeat_at?: string;
   ip_hash?: string;
   user_agent?: string;
   created_at: string;

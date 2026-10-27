@@ -8,7 +8,7 @@ import ThemeScript from '@/components/ThemeScript';
 import NavAuthLinks from '@/components/NavAuthLinks';
 
 export const metadata: Metadata = {
-  title: 'VocNix — Real-Time Audio Translation Platform',
+  title: 'VocNix – Real-Time Audio Translation Platform',
   description: 'Real-time human audio translation platform delivering browser microphone audio directly to audiences worldwide.',
 };
 
@@ -19,6 +19,7 @@ export default async function RootLayout({
 }) {
   const session = await getServerSession();
   const displayName = getUserDisplayName(session);
+  const isAuthUser = Boolean(session?.role === 'admin' || session?.role === 'super_admin');
 
   return (
     <html lang="en" className="scroll-smooth" suppressHydrationWarning>
@@ -41,26 +42,30 @@ export default async function RootLayout({
             </Link>
 
             <nav className="flex items-center space-x-2 sm:space-x-4 text-sm font-medium">
-              <Link
-                href="/#about"
-                className="text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition px-2.5 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60"
-              >
-                About
-              </Link>
+              {!isAuthUser && (
+                <>
+                  <Link
+                    href="/#about"
+                    className="text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition px-2.5 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                  >
+                    About
+                  </Link>
 
-              <Link
-                href="/#features"
-                className="text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition px-2.5 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60"
-              >
-                Features
-              </Link>
+                  <Link
+                    href="/#features"
+                    className="text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition px-2.5 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                  >
+                    Features
+                  </Link>
 
-              <Link
-                href="/#support"
-                className="text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition px-2.5 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60"
-              >
-                Support
-              </Link>
+                  <Link
+                    href="/#support"
+                    className="text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition px-2.5 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                  >
+                    Support
+                  </Link>
+                </>
+              )}
 
               {/* Dynamic Role-Based / Context-Aware Auth Links */}
               <NavAuthLinks session={session} displayName={displayName} />

@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getSessionFromRequest } from '@/lib/auth/session';
 import { Repository } from '@/lib/db/repository';
 
 export const dynamic = 'force-dynamic';
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
+    const session = await getSessionFromRequest(req);
+    if (!session || session.role !== 'super_admin') {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Super Admin access required' },
+        { status: 403 }
+      );
+    }
+
     const body = await req.json();
     const { action, planSlug, days } = body;
 
@@ -49,6 +58,32 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
 
     return NextResponse.json({ success: false, error: 'Unknown Super Admin action' }, { status: 400 });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const session = await getSessionFromRequest(req);
+    if (!session || session.role !== 'super_admin') {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Super Admin access required' },
+        { status: 403 }
+      );
+    }
+
+    const { id } = params;
+    if (!id) {
+      return NextResponse.json({ success: false, error: 'Organization ID is required' }, { status: 400 });
+    }
+
+    const deleted = await Repository.deleteOrganization(id);
+    if (!deleted) {
+      return NextResponse.json({ success: false, error: 'Organization not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, message: 'Organization deleted successfully' });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }

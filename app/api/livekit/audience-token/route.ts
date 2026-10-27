@@ -6,7 +6,7 @@ import { randomBytes } from 'crypto';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { eventToken, roomId, sessionKey } = body;
+    const { eventToken, roomId, sessionKey, languageCode } = body;
 
     if (!eventToken || !roomId) {
       return NextResponse.json(
@@ -35,7 +35,13 @@ export async function POST(req: NextRequest) {
     const lockCookieName = `vocnix_audience_lock_${eventToken}`;
     const lockedRoomId = req.cookies.get(lockCookieName)?.value;
 
-    if (lockedRoomId && lockedRoomId !== roomId) {
+    const isExplicitLanguageRequest = Boolean(
+      languageCode && (event.languages || []).some(
+        (l) => l.language_code.toLowerCase() === languageCode.toLowerCase()
+      )
+    );
+
+    if (lockedRoomId && lockedRoomId !== roomId && !isExplicitLanguageRequest) {
       const lockedRoom = event.rooms.find(r => r.id === lockedRoomId);
       const lockedLang = event.languages.find(l => l.id === lockedRoom?.event_language_id);
       return NextResponse.json(
@@ -60,6 +66,13 @@ export async function POST(req: NextRequest) {
 
     const language = event.languages.find(l => l.id === room.event_language_id);
 
+    if (languageCode && language?.language_code.toLowerCase() !== languageCode.toLowerCase()) {
+      return NextResponse.json(
+        { success: false, error: 'Language parameter does not match the target translation channel' },
+        { status: 400 }
+      );
+    }
+
     // 4. Validate LiveKit config
     const livekitConfig = getLiveKitConfig();
     if (!livekitConfig.isConfigured) {
@@ -70,6 +83,20 @@ export async function POST(req: NextRequest) {
             'Audio server is not configured on the backend. Please verify your environment settings.',
         },
         { status: 503 }
+      );
+    }
+
+    // 4b. Enforce audience capacity limit based on active subscription plan
+    const plan = await Repository.getOrganizationPlan(event.organization_id);
+    const maxListeners = plan.max_listeners || 50;
+    const currentEventListeners = await Repository.getActiveEventListeners(event.id);
+    if (currentEventListeners >= maxListeners) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Audience limit reached (${maxListeners} listeners allowed on ${plan.name}). Contact host or upgrade subscription.`,
+        },
+        { status: 403 }
       );
     }
 

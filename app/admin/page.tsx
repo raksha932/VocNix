@@ -20,6 +20,7 @@ import {
   TrendingUp,
   FileText,
   UserCheck,
+  Trash2,
   Plus,
   Building,
   X,
@@ -57,6 +58,11 @@ export default function SuperAdminPage() {
   const [creatingOrg, setCreatingOrg] = useState(false);
   const [createOrgError, setCreateOrgError] = useState<string | null>(null);
   const [createSuccessMsg, setCreateSuccessMsg] = useState<string | null>(null);
+  // Delete Organization State
+  const [orgToDelete, setOrgToDelete] = useState<any | null>(null);
+  const [isDeletingOrg, setIsDeletingOrg] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
 
   const fetchAdminData = async () => {
     try {
@@ -217,6 +223,34 @@ export default function SuperAdminPage() {
       alert(err.message);
     } finally {
       setUpdatingOrgId(null);
+    }
+  };
+
+  // 5. DELETE ORGANIZATION
+  const handleConfirmDeleteOrg = async () => {
+    if (!orgToDelete) return;
+    setIsDeletingOrg(true);
+    setDeleteError(null);
+
+    try {
+      const res = await fetch(`/api/admin/organizations/${orgToDelete.id}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setDeleteError(data.error || 'Failed to delete organization');
+        setIsDeletingOrg(false);
+        return;
+      }
+
+      setCreateSuccessMsg(`Organization "${orgToDelete.name}" was successfully deleted.`);
+      setTimeout(() => setCreateSuccessMsg(null), 5000);
+      setOrgToDelete(null);
+      await fetchAdminData();
+    } catch (err: any) {
+      setDeleteError(err.message || 'Network error deleting organization');
+    } finally {
+      setIsDeletingOrg(false);
     }
   };
 
@@ -584,6 +618,18 @@ export default function SuperAdminPage() {
                             <span>Suspend</span>
                           </button>
                         )}
+                        {/* Delete Organization */}
+                        <button
+                          onClick={() => {
+                            setDeleteError(null);
+                            setOrgToDelete(org);
+                          }}
+                          disabled={updatingOrgId === org.id}
+                          title={`Delete ${org.name}`}
+                          className="p-1.5 bg-red-500/10 hover:bg-red-500/25 text-red-400 hover:text-red-300 rounded-lg border border-red-500/30 transition flex items-center justify-center"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -802,6 +848,66 @@ export default function SuperAdminPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+    
+      {/* Delete Confirmation Modal */}
+      {orgToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-red-500/30 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center space-x-3 text-red-400">
+              <div className="w-10 h-10 rounded-xl bg-red-500/15 border border-red-500/30 flex items-center justify-center">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Delete Organization</h3>
+                <p className="text-xs text-slate-400">This action cannot be undone</p>
+              </div>
+            </div>
+
+            {deleteError && (
+              <div className="p-3 bg-red-500/15 border border-red-500/30 text-red-400 rounded-xl text-xs flex items-center space-x-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{deleteError}</span>
+              </div>
+            )}
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Are you sure you want to permanently delete <strong className="text-white">{orgToDelete.name}</strong>? All associated events, dynamic rooms, and tenant records will be permanently removed.
+            </p>
+
+            <div className="flex items-center justify-end space-x-3 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setOrgToDelete(null);
+                  setDeleteError(null);
+                }}
+                disabled={isDeletingOrg}
+                className="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteOrg}
+                disabled={isDeletingOrg}
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-red-600 hover:bg-red-500 text-white transition flex items-center space-x-1.5 shadow-md shadow-red-600/30 disabled:opacity-50"
+              >
+                {isDeletingOrg ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Organization</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

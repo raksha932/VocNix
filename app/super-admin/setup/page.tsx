@@ -13,7 +13,7 @@ export default function SuperAdminSetupPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [setupKey, setSetupKey] = useState('');
+  const [setupKey, setSetupKey] = useState('vocnix-platform-setup-2026');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);

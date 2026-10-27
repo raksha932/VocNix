@@ -1,7 +1,7 @@
 import { Room } from 'livekit-client';
 
 async function testLiveKit() {
-  console.log('Testing live LiveKit server connection at ws://127.0.0.1:7880...');
+  console.log('Testing live LiveKit server connection...');
 
   // 1. Request translator token from our Next.js API
   const res = await fetch('http://localhost:3000/api/livekit/translator-token', {
@@ -23,7 +23,9 @@ async function testLiveKit() {
 
   // 2. Connect Room
   const room = new Room();
-  await room.connect('ws://127.0.0.1:7880', data.token);
+  const connectUrl = data.wsUrl || 'ws://127.0.0.1:7880';
+  console.log('Connecting to LiveKit at:', connectUrl);
+  await room.connect(connectUrl, data.token);
 
   console.log('Successfully CONNECTED to LiveKit room:', room.name);
   console.log('Connection State:', room.state);

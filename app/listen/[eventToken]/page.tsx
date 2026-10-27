@@ -74,7 +74,8 @@ export default function AudienceListenPage() {
         setLoadingEvent(true);
         setError(null);
 
-        const res = await fetch(`/api/audience/event/${eventToken}`, { cache: 'no-store' });
+        const searchStr = typeof window !== 'undefined' ? window.location.search : '';
+        const res = await fetch(`/api/audience/event/${eventToken}${searchStr}`, { cache: 'no-store' });
         const data = await res.json();
 
         if (!res.ok || !data.success) {
@@ -86,22 +87,47 @@ export default function AudienceListenPage() {
         setEventData(data.event);
         const langs: LanguageOption[] = data.languages || [];
 
-        // Check if audience member already has an established lock (from server cookie or local storage)
-        const localLockedRoomId = typeof window !== 'undefined'
-          ? localStorage.getItem('vocnix_locked_room_' + eventToken)
-          : null;
-        const targetLockedRoomId = data.lockedRoomId || localLockedRoomId;
+        // Check if URL specifies a language or room directly from the translator's share link
+        const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+        const queryLang = urlParams?.get('lang');
+        const queryRoom = urlParams?.get('room');
 
-        if (targetLockedRoomId) {
-          const matchedLang = langs.find((l) => l.roomId === targetLockedRoomId);
-          if (matchedLang) {
-            // Strictly lock and purge all other languages from client memory
-            setLockedLanguage(matchedLang);
-            setIsLanguageLocked(true);
-            setAvailableLanguages([matchedLang]);
-            setLoadingEvent(false);
-            return;
+        let matchedLang: LanguageOption | undefined;
+
+        // Priority 1: Explicit language link shared by translator (?lang=ta, ?lang=hi, ?lang=te, ?lang=ml)
+        if (queryLang) {
+          matchedLang = langs.find(
+            (l) =>
+              l.languageCode.toLowerCase() === queryLang.toLowerCase() ||
+              l.languageName.toLowerCase() === queryLang.toLowerCase()
+          );
+        } else if (queryRoom) {
+          matchedLang = langs.find((l) => l.roomId === queryRoom);
+        }
+
+        // Priority 2: Established lock from server cookie or local storage
+        if (!matchedLang) {
+          const localLockedRoomId = typeof window !== 'undefined'
+            ? localStorage.getItem('vocnix_locked_room_' + eventToken)
+            : null;
+          const targetLockedRoomId = data.lockedRoomId || localLockedRoomId;
+          if (targetLockedRoomId) {
+            matchedLang = langs.find((l) => l.roomId === targetLockedRoomId);
           }
+        }
+
+        if (matchedLang) {
+          // Strictly lock and purge all other languages from client memory
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('vocnix_locked_room_' + eventToken, matchedLang.roomId);
+            localStorage.setItem('vocnix_locked_lang_' + eventToken, matchedLang.languageCode);
+          }
+          setLockedLanguage(matchedLang);
+          setIsLanguageLocked(true);
+          setAvailableLanguages([matchedLang]);
+          setLoadingEvent(false);
+          connectToAudioRoom(matchedLang);
+          return;
         }
 
         // Language selection required: Present all languages
@@ -186,12 +212,14 @@ export default function AudienceListenPage() {
     };
 
     window.addEventListener('beforeunload', handleLeave);
+    window.addEventListener('pagehide', handleLeave);
     return () => {
       window.removeEventListener('beforeunload', handleLeave);
+      window.removeEventListener('pagehide', handleLeave);
     };
   }, []);
 
-  // 4. Periodic heartbeat while connected
+  // 4. Periodic heartbeat while connected (every 10 seconds)
   useEffect(() => {
     if (!lockedLanguage?.roomId || !sessionKeyRef.current || !audioConnected) return;
 
@@ -210,27 +238,48 @@ export default function AudienceListenPage() {
           setListenerCount(data.listeners);
         }
       } catch {}
-    }, 15000);
+    }, 10000);
 
     return () => clearInterval(interval);
   }, [lockedLanguage?.roomId, audioConnected]);
 
   // 5. Connect to the validated, locked room
+  // Persistent deterministic session key per browser tab
+  const getTabSessionKey = () => {
+    if (typeof window === 'undefined') return '';
+    const storageKey = `vocnix_audience_session_${eventToken}`;
+    let sKey = sessionStorage.getItem(storageKey);
+    if (!sKey) {
+      sKey = 'aud_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now().toString(36);
+      sessionStorage.setItem(storageKey, sKey);
+    }
+    return sKey;
+  };
+
+  const isConnectingRef = useRef(false);
+
+  // 5. Connect to the validated, locked room
   const connectToAudioRoom = async (targetLang: LanguageOption) => {
     if (!targetLang?.roomId) return;
+    if (isConnectingRef.current) return;
+    isConnectingRef.current = true;
 
     try {
       setConnectingAudio(true);
       setError(null);
 
       // Request audience token from server (validates and sets server-side cookie lock)
+      const sKey = getTabSessionKey();
+      sessionKeyRef.current = sKey;
+
       const res = await fetch('/api/livekit/audience-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           eventToken,
           roomId: targetLang.roomId,
-          sessionKey: sessionKeyRef.current || undefined,
+          languageCode: targetLang.languageCode,
+          sessionKey: sKey,
         }),
       });
 
@@ -263,9 +312,11 @@ export default function AudienceListenPage() {
       }
 
       setConnectingAudio(false);
+      isConnectingRef.current = false;
     } catch (err: any) {
       setError(err.message || 'Failed to connect to live audio stream');
       setConnectingAudio(false);
+      isConnectingRef.current = false;
     }
   };
 
@@ -276,6 +327,7 @@ export default function AudienceListenPage() {
     // Persist choice in localStorage
     if (typeof window !== 'undefined') {
       localStorage.setItem('vocnix_locked_room_' + eventToken, pendingSelection.roomId);
+      localStorage.setItem('vocnix_locked_lang_' + eventToken, pendingSelection.languageCode);
     }
 
     // Permanently lock language and purge all other languages from client state

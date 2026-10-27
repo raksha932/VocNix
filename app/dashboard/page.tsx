@@ -30,6 +30,9 @@ import {
   Filter,
   Eye,
   CheckCircle2,
+  Zap,
+  Info,
+  Calculator,
   ShieldAlert,
   Mail,
   Send,
@@ -126,6 +129,9 @@ export default function DashboardPage() {
 
   // Billing & Invoices State
   const [plans, setPlans] = useState<any[]>([]);
+  // Pay-as-you-Go Interactive Duration & Cost Calculator State
+  const [paygSelectedMinutes, setPaygSelectedMinutes] = useState<number>(120);
+
   const [invoices, setInvoices] = useState<any[]>([]);
 
   // Organization Settings State
@@ -629,12 +635,14 @@ export default function DashboardPage() {
       setEmailModal((prev) => ({
         ...prev,
         loading: false,
-        successMessage: `Assignment email sent to ${emailModal.recipientEmail}!`,
+        successMessage: data.message || `Assignment email sent to ${emailModal.recipientEmail}!`,
       }));
 
-      setTimeout(() => {
-        setEmailModal((prev) => ({ ...prev, isOpen: false }));
-      }, 1800);
+      if (!data.simulated) {
+        setTimeout(() => {
+          setEmailModal((prev) => ({ ...prev, isOpen: false }));
+        }, 2200);
+      }
     } catch (err: any) {
       setEmailModal((prev) => ({
         ...prev,
@@ -968,16 +976,7 @@ export default function DashboardPage() {
           <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-xl">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <div className="flex items-center space-x-2">
-                  <h2 className="text-xl font-bold text-white tracking-tight">Event Management & History</h2>
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1.5" />
-                    Supabase PostgreSQL DB
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Authoritative permanent database records. Stored in Supabase tables: <code className="font-mono text-slate-300">events</code>, <code className="font-mono text-slate-300">event_languages</code>, <code className="font-mono text-slate-300">translation_rooms</code>.
-                </p>
+                <h2 className="text-xl font-bold text-white tracking-tight">Event Management & History</h2>
               </div>
 
               {/* View All Events / Show Recent 10 Toggle */}
@@ -1330,138 +1329,239 @@ export default function DashboardPage() {
         <div className="space-y-6">
           {/* Subscription Plans */}
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-5">
               <div>
-                <h2 className="text-xl font-bold text-white tracking-tight">Subscription Plans & Event Passes</h2>
-                <p className="text-xs text-slate-400">Scale your live translation duration, listener capacity, and event quotas</p>
+                <div className="flex items-center space-x-2 text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-1">
+                  <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Subscription Tiers & Event Passes</span>
+                </div>
+                <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Subscription Plans</h2>
+                <p className="text-xs sm:text-sm text-slate-400">Choose the optimal plan for your audience scale, event duration, and translator capacity.</p>
               </div>
+
               {stats?.planName && (
-                <div className="inline-flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs">
-                  <span className="text-slate-400">Active Pass:</span>
+                <div className="inline-flex items-center space-x-2.5 px-4 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs self-start sm:self-auto shadow-sm">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-slate-400 font-medium">Active Subscription:</span>
                   <span className="font-bold text-emerald-400">{stats.planName}</span>
                 </div>
               )}
             </div>
 
-            {/* Desktop Table View (Matches Reference Design) */}
-            <div className="hidden lg:block overflow-hidden border border-slate-800 rounded-2xl bg-slate-950/70">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-800/80 text-xs font-semibold text-slate-400 tracking-wider bg-slate-900/40">
-                    <th className="py-4 px-6">Plan</th>
-                    <th className="py-4 px-6">Duration & Quotas</th>
-                    <th className="py-4 px-6">Key Capabilities</th>
-                    <th className="py-4 px-6 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60 text-sm">
-                  {plans.map((p) => {
-                    const isCurrent = stats?.planName?.toLowerCase().includes(p.slug.toLowerCase()) ||
-                                      stats?.planName?.toLowerCase().includes(p.name.toLowerCase());
-                    return (
-                      <tr
-                        key={p.id}
-                        className={`transition hover:bg-slate-900/40 ${
-                          isCurrent ? 'bg-emerald-500/[0.04]' : ''
-                        }`}
-                      >
-                        <td className="py-5 px-6 font-bold text-white whitespace-nowrap align-top">
-                          <div className="flex items-center space-x-2">
-                            <span>{p.name}</span>
-                            {isCurrent && (
-                              <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                                Current
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-5 px-6 align-top">
-                          <ul className="space-y-1.5 text-xs text-slate-300">
-                            <li className="flex items-center space-x-1.5">
-                              <span className="text-emerald-400">•</span>
-                              <span>{p.duration_label || `Up to ${p.duration_hours || Math.round(p.monthly_minute_quota / 60)} Hours live audio`}</span>
-                            </li>
-                            <li className="flex items-center space-x-1.5">
-                              <span className="text-emerald-400">•</span>
-                              <span>{p.events_per_day_label || `Max ${p.max_events} Event / day`}</span>
-                            </li>
-                            <li className="flex items-center space-x-1.5">
-                              <span className="text-emerald-400">•</span>
-                              <span>Up to <strong className="text-white font-semibold">{p.max_listeners || 50} Listeners</strong></span>
-                            </li>
-                          </ul>
-                        </td>
-                        <td className="py-5 px-6 text-xs text-slate-300 max-w-xs align-top leading-relaxed">
-                          {p.key_capabilities || 'Dry-runs, technical tests, soundchecks, 1-on-1 translator trials'}
-                        </td>
-                        <td className="py-5 px-6 text-right align-top whitespace-nowrap">
-                          <button
-                            onClick={() => handleUpgradePlan(p.slug)}
-                            disabled={isCurrent}
-                            className={`py-2 px-4 rounded-xl text-xs font-semibold transition ${
-                              isCurrent
-                                ? 'bg-slate-800 text-slate-400 border border-slate-700 cursor-default'
-                                : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20'
-                            }`}
-                          >
-                            {isCurrent ? 'Active Plan' : `Switch to Plan`}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile / Tablet Responsive Cards View */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:hidden gap-4">
+            {/* 4-Column Responsive Subscription Plans Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
               {plans.map((p) => {
-                const isCurrent = stats?.planName?.toLowerCase().includes(p.slug.toLowerCase()) ||
-                                  stats?.planName?.toLowerCase().includes(p.name.toLowerCase());
+                const isCurrent =
+                  stats?.planName?.toLowerCase().includes(p.slug.toLowerCase()) ||
+                  stats?.planName?.toLowerCase().includes(p.name.toLowerCase());
+
+                const isFree = p.slug === 'free';
+                const isPro = p.slug === 'pro';
+                const isProPlus = p.slug === 'pro-plus';
+                const isPayAsYouGo = p.slug === 'pay-as-you-go';
+
+                // Pay-as-you-go cost calculation
+                const paygExtraMinutes = Math.max(0, paygSelectedMinutes - 120);
+                const paygBlocks = Math.ceil(paygExtraMinutes / 30);
+                const paygExtraCost = paygBlocks * 250;
+                const paygTotalCost = 2500 + paygExtraCost;
+
                 return (
                   <div
                     key={p.id}
-                    className={`p-5 rounded-2xl border flex flex-col justify-between space-y-4 ${
+                    className={`rounded-2xl border p-5 flex flex-col justify-between transition-all duration-200 relative ${
                       isCurrent
-                        ? 'bg-emerald-500/10 border-emerald-500/50 shadow-lg'
-                        : 'bg-slate-950 border-slate-800'
+                        ? 'bg-slate-900/90 border-emerald-500/50 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500/30'
+                        : isProPlus
+                        ? 'bg-slate-900/70 border-amber-500/40 hover:border-amber-500/60 hover:shadow-lg hover:shadow-amber-500/5'
+                        : isPayAsYouGo
+                        ? 'bg-slate-900/70 border-purple-500/40 hover:border-purple-500/60'
+                        : 'bg-slate-900/50 border-slate-800 hover:border-slate-700'
                     }`}
                   >
-                    <div className="space-y-3">
+                    {/* Top Badges */}
+                    <div className="space-y-4">
                       <div className="flex items-center justify-between">
-                        <span className="text-base font-bold text-white">{p.name}</span>
+                        <span
+                          className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
+                            isFree
+                              ? 'bg-slate-800 text-slate-300 border-slate-700'
+                              : isPro
+                              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                              : isProPlus
+                              ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                              : 'bg-purple-500/15 text-purple-300 border-purple-500/30'
+                          }`}
+                        >
+                          {isFree ? 'Free Starter' : isPro ? 'Professional' : isProPlus ? 'Enterprise • Top Scale' : 'Flexible Pass'}
+                        </span>
+
                         {isCurrent && (
-                          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-500 text-slate-950">
-                            Current
+                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-emerald-500 text-slate-950 flex items-center space-x-1 shadow-sm">
+                            <Check className="w-3 h-3 stroke-[3]" />
+                            <span>Active</span>
                           </span>
                         )}
                       </div>
-                      <div className="border-t border-slate-800/80 pt-3 space-y-1.5 text-xs text-slate-300">
-                        <div className="font-semibold text-slate-400 uppercase text-[10px] tracking-wider">Duration & Quotas:</div>
-                        <ul className="space-y-1">
-                          <li>• {p.duration_label || `Up to ${p.duration_hours || Math.round(p.monthly_minute_quota / 60)} Hours live audio`}</li>
-                          <li>• {p.events_per_day_label || `Max ${p.max_events} Event / day`}</li>
-                          <li>• Up to <strong className="text-white">{p.max_listeners || 50} Listeners</strong></li>
-                        </ul>
+
+                      {/* Plan Title & Price */}
+                      <div>
+                        <h3 className="text-lg font-extrabold text-white tracking-tight">{p.name}</h3>
+                        <div className="mt-2 flex items-baseline space-x-1">
+                          <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                            {isFree ? 'Free' : isPro ? '₹2,000' : isProPlus ? '₹4,000' : '₹2,500'}
+                          </span>
+                          <span className="text-xs text-slate-400 font-medium">
+                            {isFree ? '/ 3 months' : isPro ? '/ month' : isProPlus ? '/ month' : '/ event'}
+                          </span>
+                        </div>
                       </div>
-                      <div className="border-t border-slate-800/80 pt-3 space-y-1 text-xs text-slate-300">
-                        <div className="font-semibold text-slate-400 uppercase text-[10px] tracking-wider">Key Capabilities:</div>
-                        <p className="text-slate-400 text-xs leading-relaxed">{p.key_capabilities}</p>
+
+                      {/* Features List */}
+                      <div className="border-t border-slate-800/80 pt-4 space-y-2.5 text-xs text-slate-300">
+                        {/* Event Duration */}
+                        <div className="flex items-start space-x-2">
+                          <Clock className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="text-slate-400">Duration: </span>
+                            <span className="font-semibold text-white">
+                              {isFree
+                                ? 'Max 60 mins per event'
+                                : isPro
+                                ? 'Max 120 mins per event'
+                                : isProPlus
+                                ? 'Unlimited minutes per event'
+                                : '120 mins included per event'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Audience Limit */}
+                        <div className="flex items-start space-x-2">
+                          <Users className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="text-slate-400">Audience Limit: </span>
+                            <strong className="font-bold text-white">
+                              {isFree ? '50 members' : isPro ? '100 members' : '1,000 members'}
+                            </strong>
+                            <span className="text-slate-400"> per event</span>
+                          </div>
+                        </div>
+
+                        {/* Translators Limit */}
+                        <div className="flex items-start space-x-2">
+                          <Mic className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="text-slate-400">Translators: </span>
+                            <strong className="font-bold text-white">
+                              {isFree ? 'Max 2' : isPro ? 'Max 5' : 'Max 10'}
+                            </strong>
+                            <span className="text-slate-400"> translators</span>
+                          </div>
+                        </div>
+
+                        {/* Languages / Event Limits */}
+                        <div className="flex items-start space-x-2">
+                          <Globe className="w-3.5 h-3.5 text-purple-400 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="text-slate-400">Languages: </span>
+                            <span className="font-semibold text-white">
+                              {isFree ? 'Max 2 languages' : 'Multiple languages'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Events Quota */}
+                        <div className="flex items-start space-x-2">
+                          <Calendar className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="text-slate-400">Events: </span>
+                            <span className="font-semibold text-white">
+                              {isFree ? 'Max 2 events allowed' : isPayAsYouGo ? '1 event per pass' : 'Unlimited events'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Pro Plus Support Message Callout */}
+                        {isProPlus && (
+                          <div className="mt-3 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] leading-relaxed flex items-start space-x-2">
+                            <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                            <span>Contact Support for higher audience limits.</span>
+                          </div>
+                        )}
+
+                        {/* Pay-as-you-Go Additional Duration Pricing & Calculator */}
+                        {isPayAsYouGo && (
+                          <div className="mt-3 p-3 rounded-xl bg-purple-500/10 border border-purple-500/30 text-[11px] space-y-2.5">
+                            <div className="font-semibold text-purple-300 flex items-center space-x-1.5">
+                              <Calculator className="w-3.5 h-3.5" />
+                              <span>Additional Duration Pricing</span>
+                            </div>
+                            <p className="text-slate-300 text-[11px] leading-relaxed">
+                              ₹250 for every additional 30 minutes beyond 120 mins.
+                            </p>
+
+                            <div className="border-t border-purple-500/20 pt-2 space-y-1.5">
+                              <label className="text-slate-400 text-[10px] uppercase font-bold block">
+                                Calculate Event Duration:
+                              </label>
+                              <select
+                                value={paygSelectedMinutes}
+                                onChange={(e) => setPaygSelectedMinutes(parseInt(e.target.value, 10))}
+                                className="w-full bg-slate-950 border border-slate-700 rounded-lg py-1.5 px-2 text-xs text-white focus:outline-none focus:border-purple-400"
+                              >
+                                <option value={120}>120 mins (2 hrs) — Included</option>
+                                <option value={150}>150 mins (2.5 hrs) — +30 mins</option>
+                                <option value={180}>180 mins (3 hrs) — +60 mins</option>
+                                <option value={210}>210 mins (3.5 hrs) — +90 mins</option>
+                                <option value={240}>240 mins (4 hrs) — +120 mins</option>
+                                <option value={300}>300 mins (5 hrs) — +180 mins</option>
+                                <option value={360}>360 mins (6 hrs) — +240 mins</option>
+                              </select>
+
+                              <div className="bg-slate-950/80 p-2 rounded-lg border border-purple-500/20 text-xs flex items-center justify-between font-mono">
+                                <span className="text-slate-400">Total Cost:</span>
+                                <span className="font-bold text-purple-300 text-sm">₹{paygTotalCost.toLocaleString('en-IN')}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => handleUpgradePlan(p.slug)}
-                      disabled={isCurrent}
-                      className={`w-full py-2.5 rounded-xl text-xs font-semibold transition ${
-                        isCurrent
-                          ? 'bg-slate-800 text-slate-500 cursor-default'
-                          : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow'
-                      }`}
-                    >
-                      {isCurrent ? 'Active Plan' : `Switch to ${p.name}`}
-                    </button>
+                    {/* Action Button */}
+                    <div className="pt-5 mt-4 border-t border-slate-800">
+                      <button
+                        onClick={() => handleUpgradePlan(p.slug)}
+                        disabled={isCurrent}
+                        className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 ${
+                          isCurrent
+                            ? 'bg-slate-800/80 text-slate-400 border border-slate-700/80 cursor-default'
+                            : isProPlus
+                            ? 'bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-lg shadow-amber-500/20'
+                            : isPayAsYouGo
+                            ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-600/20'
+                            : isPro
+                            ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20'
+                            : 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-700'
+                        }`}
+                      >
+                        {isCurrent ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Current Plan</span>
+                          </>
+                        ) : isFree ? (
+                          <span>Select Free Plan</span>
+                        ) : isPro ? (
+                          <span>Upgrade to Pro</span>
+                        ) : isProPlus ? (
+                          <span>Upgrade to Pro Plus</span>
+                        ) : (
+                          <span>Select Pay-as-you-Go</span>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -1973,8 +2073,40 @@ export default function DashboardPage() {
                 />
               </div>
 
+              {/* Direct Booth Access Link */}
+              {emailModal.room?.secure_room_token && (
+                <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-300">Direct Booth Invite Link:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const boothLink = `${window.location.origin}/translator/room/${emailModal.room?.secure_room_token}`;
+                        handleCopy(boothLink, `modal-booth-${emailModal.room?.id}`);
+                      }}
+                      className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center space-x-1.5 transition text-[11px]"
+                    >
+                      {copiedToken === `modal-booth-${emailModal.room?.id}` ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-emerald-400 font-semibold">Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Copy Link</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <p className="font-mono text-[11px] text-slate-400 break-all bg-slate-900/90 p-2 rounded-lg border border-slate-800/80 select-all">
+                    {typeof window !== 'undefined' ? `${window.location.origin}/translator/room/${emailModal.room?.secure_room_token}` : `/translator/room/${emailModal.room?.secure_room_token}`}
+                  </p>
+                </div>
+              )}
+
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                An email will be dispatched via <strong>Resend</strong> containing the event details, translator instructions, and a secure 1-click link to their live booth.
+                An email will be dispatched via <strong>Resend</strong> containing event details and the booth link. If Resend is not configured, you can copy and share the direct booth link above.
               </p>
 
               <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-800">
