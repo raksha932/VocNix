@@ -21,6 +21,7 @@ export default function AdminSignupPage() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [existingIdentifier, setExistingIdentifier] = useState<string | null>(null);
 
   // Debounced username availability validation
   useEffect(() => {
@@ -57,6 +58,7 @@ export default function AdminSignupPage() {
     e.preventDefault();
     setErrorMessage(null);
     setSuccessMessage(null);
+    setExistingIdentifier(null);
 
     // 1. Client-side field validations
     if (!username.trim() || usernameStatus === 'invalid') {
@@ -103,6 +105,9 @@ export default function AdminSignupPage() {
 
       if (!res.ok || !data.success) {
         setErrorMessage(data.error || 'Failed to register account.');
+        if (data.code === 'ACCOUNT_EXISTS' || data.code === 'USERNAME_TAKEN' || (data.error && data.error.toLowerCase().includes('already'))) {
+          setExistingIdentifier(data.existingIdentifier || email.trim() || username.trim());
+        }
         setLoading(false);
         return;
       }
@@ -143,12 +148,25 @@ export default function AdminSignupPage() {
 
         {/* Notifications */}
         {errorMessage && (
-          <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 flex items-start space-x-3 text-red-300 text-xs">
-            <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-            <div>
-              <strong className="font-semibold text-red-200">Registration Error: </strong>
-              <span>{errorMessage}</span>
+          <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 space-y-2.5 text-xs">
+            <div className="flex items-start space-x-3 text-red-300">
+              <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <strong className="font-semibold text-red-200">Registration Notice: </strong>
+                <span>{errorMessage}</span>
+              </div>
             </div>
+            {existingIdentifier && (
+              <div className="pt-0.5 pl-7">
+                <Link
+                  href={`/admin/login?identifier=${encodeURIComponent(existingIdentifier)}`}
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-semibold border border-emerald-500/40 transition text-xs"
+                >
+                  <span>Sign In with this Account</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+            )}
           </div>
         )}
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, Suspense } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Shield, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight } from 'lucide-react';
@@ -9,8 +9,9 @@ function SuperAdminLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const registered = searchParams.get('registered');
+  const paramIdentifier = searchParams.get('identifier') || searchParams.get('email') || '';
 
-  const [identifier, setIdentifier] = useState('');
+  const [identifier, setIdentifier] = useState(paramIdentifier);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -57,8 +58,7 @@ function SuperAdminLoginForm() {
 
       setSuccessMessage('Super Admin authenticated successfully! Entering Command Center...');
       setTimeout(() => {
-        router.push(data.redirectUrl || '/admin');
-        router.refresh();
+        window.location.href = data.redirectUrl || '/admin';
       }, 600);
     } catch (err: any) {
       setErrorMessage(err.message || 'Network error connecting to authentication server.');

@@ -37,6 +37,7 @@ export default function AudienceListenPage() {
     title: string;
     description?: string;
     status: string;
+    organization?: { id: string; name: string; logo_url?: string } | null;
   } | null>(null);
 
   // Available languages during selection (purged once locked)
@@ -379,10 +380,29 @@ export default function AudienceListenPage() {
       <audio ref={audioElementRef} playsInline autoPlay />
 
       {/* Global Event Header */}
-      <div className="bg-slate-900/70 border border-slate-800 rounded-3xl p-6 sm:p-7 text-center space-y-3 shadow-xl backdrop-blur">
+      <div className="bg-slate-900/70 border border-slate-800 rounded-3xl p-6 sm:p-7 text-center space-y-4 shadow-xl backdrop-blur">
+        {/* Organization Logo */}
+        {eventData?.organization?.logo_url ? (
+          <div className="flex justify-center">
+            <div className="w-16 h-16 rounded-2xl bg-slate-950 border border-slate-800 p-2 flex items-center justify-center overflow-hidden shadow-lg">
+              <img
+                src={eventData.organization.logo_url}
+                alt={eventData.organization.name || 'Organization Logo'}
+                className="w-full h-full object-contain"
+              />
+            </div>
+          </div>
+        ) : eventData?.organization?.name ? (
+          <div className="flex justify-center">
+            <div className="w-16 h-16 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-extrabold text-xl shadow-lg">
+              {eventData.organization.name.slice(0, 2).toUpperCase()}
+            </div>
+          </div>
+        ) : null}
+
         <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
           <Radio className="w-3.5 h-3.5 animate-pulse" />
-          <span>VOCNIX LIVE BROADCAST</span>
+          <span>{eventData?.organization?.name ? `${eventData.organization.name.toUpperCase()} • VOCNIX LIVE` : 'VOCNIX LIVE BROADCAST'}</span>
         </div>
         <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
           {eventData?.title || 'Live Translation Session'}

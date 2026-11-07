@@ -47,6 +47,7 @@ export default function TranslatorRoomPage() {
     eventId?: string;
     eventPublicToken?: string;
     startedAt?: string;
+    organization?: { id: string; name: string; logo_url?: string } | null;
   } | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [livekitToken, setLivekitToken] = useState<string | null>(null);
@@ -449,22 +450,37 @@ export default function TranslatorRoomPage() {
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/70 border border-slate-800 p-6 rounded-2xl">
-        <div className="space-y-1">
-          <div className="flex items-center space-x-2 text-xs font-semibold text-emerald-400 uppercase tracking-wider">
-            <Radio className="w-4 h-4 animate-pulse" />
-            <span>Translator Control Room</span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
-            {roomData?.eventTitle}
-          </h1>
-          <div className="flex items-center space-x-3 text-sm text-slate-400 pt-1">
-            <span className="flex items-center space-x-1.5">
-              <Globe className="w-4 h-4 text-blue-400" />
-              <span>Language:</span>
-              <strong className="text-slate-200">{roomData?.languageName}</strong>
-            </span>
-            <span>•</span>
-            <span className="font-mono text-xs text-slate-500 dark:text-slate-400">Session ID: {roomData?.livekitRoomName}</span>
+        <div className="flex items-center space-x-4">
+          {roomData?.organization?.logo_url ? (
+            <div className="w-14 h-14 rounded-2xl bg-slate-950 border border-slate-800 p-2 flex items-center justify-center overflow-hidden flex-shrink-0 shadow-md">
+              <img
+                src={roomData.organization.logo_url}
+                alt={roomData.organization.name || 'Organization Logo'}
+                className="w-full h-full object-contain"
+              />
+            </div>
+          ) : roomData?.organization?.name ? (
+            <div className="w-14 h-14 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-extrabold text-lg flex-shrink-0 shadow-md">
+              {roomData.organization.name.slice(0, 2).toUpperCase()}
+            </div>
+          ) : null}
+          <div className="space-y-1">
+            <div className="flex items-center space-x-2 text-xs font-semibold text-emerald-400 uppercase tracking-wider">
+              <Radio className="w-4 h-4 animate-pulse" />
+              <span>{roomData?.organization?.name ? `${roomData.organization.name} • Translator Booth` : 'Translator Control Room'}</span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
+              {roomData?.eventTitle}
+            </h1>
+            <div className="flex items-center space-x-3 text-sm text-slate-400 pt-1">
+              <span className="flex items-center space-x-1.5">
+                <Globe className="w-4 h-4 text-blue-400" />
+                <span>Language:</span>
+                <strong className="text-slate-200">{roomData?.languageName}</strong>
+              </span>
+              <span>•</span>
+              <span className="font-mono text-xs text-slate-500 dark:text-slate-400">Session ID: {roomData?.livekitRoomName}</span>
+            </div>
           </div>
         </div>
 

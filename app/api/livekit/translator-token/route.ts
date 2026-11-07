@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { room, event, language } = roomDetails;
+    const { room, event, language, organization } = roomDetails;
 
     // 2. Validate event lifecycle
     if (event.status === 'ended' || event.status === 'expired') {
@@ -85,6 +85,11 @@ export async function POST(req: NextRequest) {
         eventId: event.id,
         eventPublicToken: event.public_access_token,
         startedAt: session.started_at,
+        organization: organization ? {
+          id: organization.id,
+          name: organization.name,
+          logo_url: organization.logo_url,
+        } : null,
       },
     });
   } catch (err: any) {

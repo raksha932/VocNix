@@ -52,3 +52,6 @@ infra/.resend-email-key
 
 # Local persistent database file
 /data/
+
+# User uploads
+/public/uploads/

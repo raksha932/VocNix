@@ -148,12 +148,14 @@ export async function POST(req: NextRequest) {
       }
 
       if (!profile) {
-        // Do not reveal whether user exists
+        console.warn(`[Login Auth Debug] No matching profile found in database for identifier: "${cleanIdentifier}"`);
         return NextResponse.json(
           {
             success: false,
+            code: 'USER_NOT_FOUND',
             message: 'Invalid username/email or password',
             error: 'Invalid username/email or password',
+            debugDetails: 'Account matching the entered username or email was not found.',
           },
           { status: 401 }
         );
@@ -161,11 +163,14 @@ export async function POST(req: NextRequest) {
 
       const isValidPass = Repository.verifyLocalPassword(profile.id, password);
       if (!isValidPass) {
+        console.warn(`[Login Auth Debug] Password verification failed for profile: "${profile.username}" (${profile.email}, ID: ${profile.id})`);
         return NextResponse.json(
           {
             success: false,
+            code: 'INVALID_PASSWORD',
             message: 'Invalid username/email or password',
             error: 'Invalid username/email or password',
+            debugDetails: 'The password entered does not match the stored credentials for this account.',
           },
           { status: 401 }
         );
@@ -202,29 +207,25 @@ export async function POST(req: NextRequest) {
         ? 'super_admin'
         : 'admin');
 
-    // Strict role validation if requiredRole is specified
+    // Role validation & smooth portal redirection
     if (requiredRole === 'super_admin' && userRole !== 'super_admin') {
       return NextResponse.json(
         {
           success: false,
           code: 'UNAUTHORIZED_ROLE',
-          message: 'Access restricted: Super Admin privileges required.',
+          message: 'Access restricted: This account has Admin privileges. Please sign in through the Admin Login portal.',
           error: 'Access restricted: Super Admin privileges required.',
+          redirectUrl: '/admin/login',
         },
         { status: 403 }
       );
     }
 
-    if (requiredRole === 'admin' && userRole !== 'admin') {
-      return NextResponse.json(
-        {
-          success: false,
-          code: 'UNAUTHORIZED_ROLE',
-          message: 'Access restricted: This portal is exclusively for Admin accounts.',
-          error: 'Access restricted: This portal is exclusively for Admin accounts.',
-        },
-        { status: 403 }
-      );
+    // If Super Admin signs in via Admin portal, gracefully allow and route to Command Center
+    let effectiveRedirect = userRole === 'super_admin' ? '/admin' : '/dashboard';
+    if (requiredRole === 'admin' && userRole === 'super_admin') {
+      console.log(`[Login Auth Notice] Super Admin "${profile.email}" authenticated via Admin portal; auto-redirecting to /admin`);
+      effectiveRedirect = '/admin';
     }
 
     // 4. Create authoritative user session
@@ -252,14 +253,14 @@ export async function POST(req: NextRequest) {
       username,
       full_name: fullName || undefined,
       name,
-      avatar: profile?.avatar_url || undefined,
+      avatar: (profile?.avatar_url && !profile.avatar_url.startsWith('data:') && profile.avatar_url.length < 500) ? profile.avatar_url : undefined,
       role: userRole,
       createdAt: now,
       expiresAt: now + 7 * 24 * 60 * 60 * 1000, // 7 days
     };
 
     const signedToken = await signSession(session);
-    const redirectUrl = userRole === 'super_admin' ? '/admin' : '/dashboard';
+    const redirectUrl = effectiveRedirect;
 
     const response = NextResponse.json({
       success: true,

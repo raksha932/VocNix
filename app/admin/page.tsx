@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import {
   ShieldAlert,
@@ -32,6 +32,23 @@ import {
   Check,
 } from 'lucide-react';
 
+
+const Upload = ({ className = 'w-4 h-4' }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="17 8 12 3 7 8" />
+    <line x1="12" x2="12" y1="3" y2="15" />
+  </svg>
+);
+
+const ImageIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+    <circle cx="9" cy="9" r="2" />
+    <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+  </svg>
+);
+
 export default function SuperAdminPage() {
   const [overview, setOverview] = useState<any>(null);
   const [organizations, setOrganizations] = useState<any[]>([]);
@@ -51,6 +68,9 @@ export default function SuperAdminPage() {
   const [newAdminName, setNewAdminName] = useState('');
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [newContactNumber, setNewContactNumber] = useState('');
+  const [newOrgLogoFile, setNewOrgLogoFile] = useState<File | null>(null);
+  const [newOrgLogoPreview, setNewOrgLogoPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [newOrgStatus, setNewOrgStatus] = useState<'active' | 'inactive'>('active');
   const [newOrgSlug, setNewOrgSlug] = useState('');
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
@@ -63,25 +83,45 @@ export default function SuperAdminPage() {
   const [isDeletingOrg, setIsDeletingOrg] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  const createOrgModalRef = useRef<HTMLDivElement>(null);
+  const createOrgFormBodyRef = useRef<HTMLDivElement>(null);
+
+  const handleOpenCreateOrgModal = () => {
+    setCreateOrgError(null);
+    setIsAddOrgModalOpen(true);
+    setTimeout(() => {
+      if (createOrgFormBodyRef.current) {
+        createOrgFormBodyRef.current.scrollTop = 0;
+      }
+      if (createOrgModalRef.current) {
+        createOrgModalRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 50);
+  };
+
 
   const fetchAdminData = async () => {
     try {
       const [ovRes, orgsRes] = await Promise.all([
-        fetch('/api/admin/overview'),
-        fetch('/api/admin/organizations'),
+        fetch('/api/admin/overview', { cache: 'no-store' }),
+        fetch('/api/admin/organizations', { cache: 'no-store' }),
       ]);
 
       const ovData = await ovRes.json();
       const orgsData = await orgsRes.json();
 
-      if (ovData.success) setOverview(ovData.overview);
-      if (orgsData.success) {
-        setOrganizations(orgsData.organizations || []);
+      if (ovData.success) {
+        setOverview(ovData.overview);
+      }
+      if (orgsData.success && Array.isArray(orgsData.organizations)) {
+        setOrganizations(orgsData.organizations);
         setPlans(orgsData.plans || []);
-        if (!selectedImpersonateOrgId && orgsData.organizations?.length > 0) {
-          // Pre-select first organization for instant usability
-          setSelectedImpersonateOrgId(orgsData.organizations[0].id);
-        }
+        setSelectedImpersonateOrgId((prev) => {
+          if (prev && orgsData.organizations.some((o: any) => o.id === prev)) {
+            return prev;
+          }
+          return orgsData.organizations.length > 0 ? orgsData.organizations[0].id : '';
+        });
       }
       setLoading(false);
     } catch (err) {
@@ -92,9 +132,54 @@ export default function SuperAdminPage() {
 
   useEffect(() => {
     fetchAdminData();
-    const interval = setInterval(fetchAdminData, 8000);
+    const interval = setInterval(fetchAdminData, 12000);
     return () => clearInterval(interval);
   }, []);
+
+  const handlePhoneChange = (raw: string) => {
+    let digits = raw.replace(/\D/g, '');
+    if (digits.startsWith('91') && digits.length > 10) {
+      digits = digits.slice(2);
+    }
+    digits = digits.slice(0, 10);
+    if (digits.length > 5) {
+      setNewContactNumber(`${digits.slice(0, 5)} ${digits.slice(5)}`);
+    } else {
+      setNewContactNumber(digits);
+    }
+  };
+
+  const handleLogoFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const allowed = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+    if (!allowed.includes(file.type.toLowerCase())) {
+      setCreateOrgError('Invalid file format. Please upload a PNG, JPG, JPEG, or WebP image.');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setCreateOrgError('Logo image must be under 5MB.');
+      return;
+    }
+
+    setCreateOrgError(null);
+    setNewOrgLogoFile(file);
+    const previewUrl = URL.createObjectURL(file);
+    setNewOrgLogoPreview(previewUrl);
+  };
+
+  const handleRemoveLogo = () => {
+    setNewOrgLogoFile(null);
+    if (newOrgLogoPreview) {
+      URL.revokeObjectURL(newOrgLogoPreview);
+      setNewOrgLogoPreview(null);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   // 1. CREATE ORGANIZATION WITH ADMIN PROVISIONING
   const handleCreateOrg = async (e: React.FormEvent) => {
@@ -115,7 +200,45 @@ export default function SuperAdminPage() {
       return;
     }
 
+    // Validate 10-digit Indian phone number if provided
+    const rawDigits = newContactNumber.replace(/\D/g, '');
+    if (rawDigits.length > 0) {
+      if (rawDigits.length !== 10) {
+        setCreateOrgError('Please enter a valid 10-digit Indian phone number.');
+        return;
+      }
+      if (!['6', '7', '8', '9'].includes(rawDigits[0])) {
+        setCreateOrgError('Indian mobile number must start with 6, 7, 8, or 9.');
+        return;
+      }
+    }
+
     setCreatingOrg(true);
+    setCreateOrgError(null);
+
+    // If logo file was selected, upload it first to persistent storage
+    let uploadedLogoUrl: string | undefined = undefined;
+    if (newOrgLogoFile) {
+      try {
+        const logoFormData = new FormData();
+        logoFormData.append('logo', newOrgLogoFile);
+        const logoRes = await fetch('/api/admin/organizations/logo', {
+          method: 'POST',
+          body: logoFormData,
+        });
+        const logoData = await logoRes.json();
+        if (!logoRes.ok || !logoData.success) {
+          setCreateOrgError(logoData.error || 'Failed to upload organization logo.');
+          setCreatingOrg(false);
+          return;
+        }
+        uploadedLogoUrl = logoData.logo_url;
+      } catch (uploadErr: any) {
+        setCreateOrgError(uploadErr.message || 'Error uploading organization logo.');
+        setCreatingOrg(false);
+        return;
+      }
+    }
     setCreateOrgError(null);
 
     try {
@@ -127,7 +250,8 @@ export default function SuperAdminPage() {
           slug: newOrgSlug.trim() || undefined,
           admin_name: newAdminName.trim() || undefined,
           admin_email: newAdminEmail.trim().toLowerCase(),
-          contact_number: newContactNumber.trim() || undefined,
+          contact_number: rawDigits.length === 10 ? `+91${rawDigits}` : undefined,
+          logo_url: uploadedLogoUrl,
           status: newOrgStatus,
           plan_id: newOrgPlanId || plans[0]?.id || 'plan-starter',
         }),
@@ -152,6 +276,7 @@ export default function SuperAdminPage() {
       setSlugManuallyEdited(false);
       setNewOrgPlanId('');
       setNewOrgStatus('active');
+      handleRemoveLogo();
       setIsAddOrgModalOpen(false);
       setCreatingOrg(false);
 
@@ -229,12 +354,15 @@ export default function SuperAdminPage() {
   // 5. DELETE ORGANIZATION
   const handleConfirmDeleteOrg = async () => {
     if (!orgToDelete) return;
+    const targetId = orgToDelete.id;
+    const targetName = orgToDelete.name;
     setIsDeletingOrg(true);
     setDeleteError(null);
 
     try {
-      const res = await fetch(`/api/admin/organizations/${orgToDelete.id}`, {
+      const res = await fetch(`/api/admin/organizations/${targetId}`, {
         method: 'DELETE',
+        cache: 'no-store',
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
@@ -243,7 +371,20 @@ export default function SuperAdminPage() {
         return;
       }
 
-      setCreateSuccessMsg(`Organization "${orgToDelete.name}" was successfully deleted.`);
+      // Optimistically remove from state immediately to prevent flickering
+      setOrganizations((prev) => prev.filter((o) => o.id !== targetId));
+      setOverview((prev: any) =>
+        prev
+          ? {
+              ...prev,
+              totalOrganizations: Math.max(0, (prev.totalOrganizations || 1) - 1),
+              activeOrganizations: Math.max(0, (prev.activeOrganizations || 1) - 1),
+            }
+          : prev
+      );
+      setSelectedImpersonateOrgId((prev) => (prev === targetId ? '' : prev));
+
+      setCreateSuccessMsg(`Organization "${targetName}" was successfully deleted.`);
       setTimeout(() => setCreateSuccessMsg(null), 5000);
       setOrgToDelete(null);
       await fetchAdminData();
@@ -474,10 +615,7 @@ export default function SuperAdminPage() {
             </div>
 
             <button
-              onClick={() => {
-                setCreateOrgError(null);
-                setIsAddOrgModalOpen(true);
-              }}
+              onClick={handleOpenCreateOrgModal}
               className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-slate-950 font-bold text-xs rounded-xl flex items-center space-x-1.5 transition shadow-lg shadow-amber-500/20 whitespace-nowrap"
             >
               <Plus className="w-4 h-4 text-slate-950" />
@@ -507,8 +645,23 @@ export default function SuperAdminPage() {
                 return (
                   <tr key={org.id} className="hover:bg-slate-950/40 transition">
                     <td className="py-3.5">
-                      <div className="font-bold text-white text-sm">{org.name}</div>
-                      <div className="font-mono text-[10px] text-slate-500">/{org.slug}</div>
+                      <div className="flex items-center space-x-3">
+                        {org.logo_url ? (
+                          <img
+                            src={org.logo_url}
+                            alt={org.name}
+                            className="w-8 h-8 rounded-lg object-contain bg-slate-950 border border-slate-800 p-0.5 flex-shrink-0"
+                          />
+                        ) : (
+                          <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 font-bold text-xs flex-shrink-0">
+                            {org.name.slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                        <div>
+                          <div className="font-bold text-white text-sm">{org.name}</div>
+                          <div className="font-mono text-[10px] text-slate-500">/{org.slug}</div>
+                        </div>
+                      </div>
                     </td>
 
                     <td>
@@ -640,10 +793,7 @@ export default function SuperAdminPage() {
                   <td colSpan={7} className="text-center py-12 text-slate-500 space-y-2">
                     <p className="text-sm">No organizations found{searchQuery ? ` matching "${searchQuery}"` : ''}.</p>
                     <button
-                      onClick={() => {
-                        setCreateOrgError(null);
-                        setIsAddOrgModalOpen(true);
-                      }}
+                      onClick={handleOpenCreateOrgModal}
                       className="inline-flex items-center space-x-1.5 text-xs text-amber-400 hover:text-amber-300 font-semibold underline underline-offset-4"
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -659,9 +809,21 @@ export default function SuperAdminPage() {
 
       {/* FEATURE 1: Super Admin – Create New Organization Modal */}
       {isAddOrgModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl relative">
-            <div className="flex items-center justify-between">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !creatingOrg) {
+              setIsAddOrgModalOpen(false);
+              setCreateOrgError(null);
+            }
+          }}
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 overflow-y-auto p-4 sm:p-6 flex items-start sm:items-center justify-center overscroll-contain"
+        >
+          <div
+            ref={createOrgModalRef}
+            className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full shadow-2xl relative my-auto max-h-[calc(100vh-2rem)] sm:max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+          >
+            {/* Modal Header */}
+            <div className="flex-shrink-0 p-5 sm:p-6 pb-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900">
               <div className="flex items-center space-x-2.5">
                 <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
                   <Building className="w-5 h-5" />
@@ -684,7 +846,7 @@ export default function SuperAdminPage() {
             </div>
 
             {createOrgError && (
-              <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 flex items-start space-x-2.5 text-red-300 text-xs">
+              <div className="flex-shrink-0 mx-5 sm:mx-6 mt-4 p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 flex items-start space-x-2.5 text-red-300 text-xs">
                 <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
                 <div>
                   <strong className="font-semibold text-red-200">Validation Error: </strong>
@@ -693,7 +855,66 @@ export default function SuperAdminPage() {
               </div>
             )}
 
-            <form onSubmit={handleCreateOrg} className="space-y-4 text-xs">
+            <form onSubmit={handleCreateOrg} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              {/* Scrollable Form Fields */}
+              <div ref={createOrgFormBodyRef} className="space-y-4 text-xs overflow-y-auto px-5 sm:px-6 py-4 flex-1 overscroll-contain">
+              {/* Organization Logo Field (Feature 1) */}
+              <div className="space-y-1.5 p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                <label className="font-semibold text-slate-300 flex items-center justify-between">
+                  <span className="flex items-center space-x-1.5">
+                    <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Organization Logo</span>
+                  </span>
+                  <span className="text-slate-500 font-normal">PNG, JPG, WebP (Max 5MB)</span>
+                </label>
+
+                <div className="flex items-center space-x-3 pt-1">
+                  {newOrgLogoPreview ? (
+                    <div className="relative group w-14 h-14 rounded-xl border border-amber-500/40 bg-slate-900 p-1 flex items-center justify-center overflow-hidden flex-shrink-0 shadow-md">
+                      <img
+                        src={newOrgLogoPreview}
+                        alt="Logo preview"
+                        className="w-full h-full object-contain rounded-lg"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleRemoveLogo}
+                        title="Remove logo"
+                        className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 flex items-center justify-center text-red-400 transition"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="w-14 h-14 rounded-xl border border-dashed border-slate-700 bg-slate-900/50 flex flex-col items-center justify-center text-slate-500 flex-shrink-0">
+                      <ImageIcon className="w-5 h-5 text-slate-600 mb-0.5" />
+                      <span className="text-[9px]">No logo</span>
+                    </div>
+                  )}
+
+                  <div className="flex-1 space-y-1">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/webp"
+                      onChange={handleLogoFileSelect}
+                      className="hidden"
+                      id="org-logo-upload"
+                    />
+                    <label
+                      htmlFor="org-logo-upload"
+                      className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 active:scale-[0.98] text-slate-200 text-xs font-semibold rounded-lg border border-slate-700 cursor-pointer transition shadow-sm"
+                    >
+                      <Upload className="w-3.5 h-3.5 text-amber-400" />
+                      <span>{newOrgLogoPreview ? 'Change Logo' : 'Upload Logo'}</span>
+                    </label>
+                    <p className="text-[11px] text-slate-400">
+                      {newOrgLogoFile ? newOrgLogoFile.name : 'Upload official logo to display across all dashboards & audience pages'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               {/* 1. Organization Name (Required) */}
               <div className="space-y-1.5">
                 <label className="font-semibold text-slate-300 flex items-center justify-between">
@@ -752,16 +973,29 @@ export default function SuperAdminPage() {
               {/* 4. Contact Number (Optional) */}
               <div className="space-y-1.5">
                 <label className="font-semibold text-slate-300 flex items-center justify-between">
-                  <span>Contact Number</span>
-                  <span className="text-slate-500 font-normal">Optional phone</span>
+                  <span className="flex items-center space-x-1.5">
+                    <Phone className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Contact Number (India)</span>
+                  </span>
+                  <span className="text-slate-500 font-normal">+91 XXXXX XXXXX</span>
                 </label>
-                <input
+                <div className="relative flex items-center">
+                  <div className="absolute left-2.5 flex items-center space-x-1.5 text-slate-300 font-semibold text-xs border-r border-slate-800 pr-2 pointer-events-none select-none">
+                    <span className="text-sm">🇮🇳</span>
+                    <span className="font-mono text-slate-200">+91</span>
+                  </div>
+                  <input
                   type="tel"
-                  placeholder="+1 (555) 345-6789"
+                  placeholder="98765 43210"
                   value={newContactNumber}
-                  onChange={(e) => setNewContactNumber(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 transition font-mono"
+                  maxLength={11}
+                  onChange={(e) => handlePhoneChange(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-16 pr-3.5 py-2.5 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-amber-500 transition font-mono tracking-wide"
                 />
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  Enter 10-digit Indian mobile number (starts with 6, 7, 8, or 9).
+                </p>
               </div>
 
               {/* 5. Organization Status (Active/Inactive) */}
@@ -817,7 +1051,10 @@ export default function SuperAdminPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-end space-x-3 pt-4 border-t border-slate-800">
+              </div>
+
+              {/* Fixed / Sticky Action Footer */}
+              <div className="flex-shrink-0 px-5 sm:px-6 py-3.5 border-t border-slate-800 bg-slate-900/95 flex items-center justify-end space-x-3">
                 <button
                   type="button"
                   onClick={() => {

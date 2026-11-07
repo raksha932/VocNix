@@ -16,10 +16,10 @@ export async function GET(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, slug } = body;
+    const { name, slug, logo_url, contact_number } = body;
     const org = await resolveRequestOrganization(req);
 
-    const updated = await Repository.updateOrganization(org.id, { name, slug });
+    const updated = await Repository.updateOrganization(org.id, { name, slug, logo_url, contact_number });
     return NextResponse.json({ success: true, organization: updated });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });

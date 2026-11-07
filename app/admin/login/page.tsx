@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, Suspense } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Activity, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight } from 'lucide-react';
@@ -9,12 +9,17 @@ function AdminLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const registered = searchParams.get('registered');
+  const paramIdentifier = searchParams.get('identifier') || searchParams.get('email') || '';
 
-  const [identifier, setIdentifier] = useState('');
+  const [identifier, setIdentifier] = useState(paramIdentifier);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  useEffect(() => {
+    if (paramIdentifier && !identifier) setIdentifier(paramIdentifier);
+  }, [paramIdentifier]);
+
   const [successMessage, setSuccessMessage] = useState<string | null>(
     registered ? 'Account created successfully! Please log in with your credentials.' : null
   );
@@ -57,8 +62,7 @@ function AdminLoginForm() {
 
       setSuccessMessage('Login successful! Redirecting to dashboard...');
       setTimeout(() => {
-        router.push(data.redirectUrl || '/dashboard');
-        router.refresh();
+        window.location.href = data.redirectUrl || '/dashboard';
       }, 600);
     } catch (err: any) {
       setErrorMessage(err.message || 'Network error connecting to authentication server.');

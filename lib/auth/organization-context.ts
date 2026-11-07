@@ -41,7 +41,7 @@ export async function resolveOrganizationContext(req: NextRequest): Promise<Reso
       }
     }
 
-    const defaultOrg = await Repository.getDefaultOrganization();
+    const defaultOrg = (await Repository.getDefaultOrganization()) || ({ id: '', name: 'No Organization', slug: 'none', status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() } as Organization);
     return {
       organization: defaultOrg,
       isImpersonating: false,
@@ -58,7 +58,7 @@ export async function resolveOrganizationContext(req: NextRequest): Promise<Reso
         isImpersonating: false,
       };
     }
-    const defaultOrg = await Repository.getDefaultOrganization();
+    const defaultOrg = (await Repository.getDefaultOrganization()) || ({ id: '', name: 'No Organization', slug: 'none', status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() } as Organization);
     return {
       organization: defaultOrg,
       isImpersonating: false,
@@ -66,7 +66,7 @@ export async function resolveOrganizationContext(req: NextRequest): Promise<Reso
   }
 
   // 3. Fallback / Public
-  const defaultOrg = await Repository.getDefaultOrganization();
+  const defaultOrg = (await Repository.getDefaultOrganization()) || ({ id: '', name: 'No Organization', slug: 'none', status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString() } as Organization);
   return {
     organization: defaultOrg,
     isImpersonating: false,

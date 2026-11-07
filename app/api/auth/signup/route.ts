@@ -1,3 +1,4 @@
+import { validatePasswordPolicy } from '@/lib/auth/password';
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin, getSupabaseClient, isSupabaseConfigured } from '@/lib/db/supabase';
 import { Repository } from '@/lib/db/repository';
@@ -41,30 +42,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Please enter a valid email address.' }, { status: 400 });
     }
 
-    // Password policy: At least 8 characters, at least 1 letter and 1 number
-    if (password.length < 8) {
-      return NextResponse.json({ success: false, error: 'Password must be at least 8 characters long.' }, { status: 400 });
-    }
-    if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
-      return NextResponse.json(
-        { success: false, error: 'Password must contain at least one letter and one number.' },
-        { status: 400 }
-      );
+    // Password policy verification (min 8 chars, 1 letter, 1 number)
+    const policyResult = validatePasswordPolicy(password);
+    if (!policyResult.valid) {
+      return NextResponse.json({ success: false, error: policyResult.error }, { status: 400 });
     }
 
-    // 3. Uniqueness checks
+    // 3. Uniqueness checks with concrete diagnostics
     const usernameAvailable = await Repository.isUsernameAvailable(cleanUsername);
     if (!usernameAvailable) {
+      console.warn(`[Registration Conflict] Username already exists: "${cleanUsername}"`);
       return NextResponse.json(
-        { success: false, error: 'This username is already taken. Please choose another.' },
+        {
+          success: false,
+          code: 'USERNAME_TAKEN',
+          error: 'This username is already in use. Please choose another username or sign in if this is your account.',
+          existingIdentifier: cleanUsername,
+        },
         { status: 409 }
       );
     }
 
     const emailRegistered = await Repository.isEmailRegistered(cleanEmail);
     if (emailRegistered) {
+      console.warn(`[Registration Conflict] Email already registered: "${cleanEmail}"`);
       return NextResponse.json(
-        { success: false, error: 'An account with this email address already exists. Please log in.' },
+        {
+          success: false,
+          code: 'ACCOUNT_EXISTS',
+          error: 'An account with this email address already exists. Please sign in instead.',
+          existingIdentifier: cleanEmail,
+        },
         { status: 409 }
       );
     }

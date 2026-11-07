@@ -99,6 +99,7 @@ export async function PATCH(req: NextRequest) {
     // 3. Re-issue updated session cookie
     const updatedName = full_name !== undefined ? full_name.trim() : session.name;
     const updatedAvatar = avatar_url !== undefined ? avatar_url : session.avatar;
+    const safeAvatarForCookie = (updatedAvatar && !updatedAvatar.startsWith('data:') && updatedAvatar.length < 500) ? updatedAvatar : undefined;
     const updatedEmail = email !== undefined ? email.trim().toLowerCase() : session.email;
 
     const newSession: UserSession = {
@@ -106,7 +107,7 @@ export async function PATCH(req: NextRequest) {
       email: updatedEmail,
       full_name: full_name !== undefined ? full_name.trim() : session.full_name,
       name: updatedName || 'Admin',
-      avatar: updatedAvatar,
+      avatar: safeAvatarForCookie,
     };
 
     const token = await signSession(newSession);

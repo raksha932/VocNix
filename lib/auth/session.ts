@@ -84,8 +84,14 @@ async function getHmacKey(): Promise<CryptoKey> {
  * Universal HMAC-SHA256 session signer
  */
 export async function signSession(session: UserSession): Promise<string> {
+  // A cookie MUST NEVER contain large data URLs or strings over 500 chars to avoid RFC 6265 4KB limit and header overflow
+  const safeSession: UserSession = { ...session };
+  if (safeSession.avatar && (safeSession.avatar.startsWith('data:') || safeSession.avatar.length > 500)) {
+    delete safeSession.avatar;
+  }
+
   const enc = new TextEncoder();
-  const payloadStr = JSON.stringify(session);
+  const payloadStr = JSON.stringify(safeSession);
   const payloadBase64 = base64UrlEncode(enc.encode(payloadStr));
 
   const key = await getHmacKey();

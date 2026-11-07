@@ -79,6 +79,11 @@ export async function GET(
         description: event.description,
         status: event.status,
         scheduledStart: event.scheduled_start,
+        organization: event.organization ? {
+          id: event.organization.id,
+          name: event.organization.name,
+          logo_url: event.organization.logo_url,
+        } : null,
       },
       languages,
       lockedRoomId: resolvedLockedRoomId,

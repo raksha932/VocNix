@@ -60,6 +60,17 @@ export async function middleware(req: NextRequest) {
       );
     }
 
+    // Allow Organization Admins to upload their organization logo
+    if (pathname === '/api/admin/organizations/logo') {
+      if (session.role !== 'super_admin' && session.role !== 'admin') {
+        return NextResponse.json(
+          { success: false, message: 'Forbidden: Admin access required', error: 'Forbidden' },
+          { status: 403 }
+        );
+      }
+      return NextResponse.next();
+    }
+
     if (session.role !== 'super_admin') {
       return NextResponse.json(
         { success: false, message: 'Forbidden: Super Admin access required', error: 'Forbidden' },

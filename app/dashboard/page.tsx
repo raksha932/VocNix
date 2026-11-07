@@ -36,6 +36,7 @@ import {
   ShieldAlert,
   Mail,
   Send,
+
 } from 'lucide-react';
 import QRCodeModal from '@/components/QRCodeModal';
 
@@ -49,6 +50,23 @@ const COMMON_LANGUAGES = [
   { code: 'ja', name: 'Japanese' },
   { code: 'zh', name: 'Mandarin' },
 ];
+
+
+const Upload = ({ className = 'w-4 h-4' }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="17 8 12 3 7 8" />
+    <line x1="12" x2="12" y1="3" y2="15" />
+  </svg>
+);
+
+const ImageIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+    <circle cx="9" cy="9" r="2" />
+    <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+  </svg>
+);
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<any>(null);
@@ -137,6 +155,11 @@ export default function DashboardPage() {
   // Organization Settings State
   const [orgName, setOrgName] = useState('');
   const [orgSlug, setOrgSlug] = useState('');
+  const [orgLogoUrl, setOrgLogoUrl] = useState('');
+  const [orgLogoFile, setOrgLogoFile] = useState<File | null>(null);
+  const [orgLogoPreview, setOrgLogoPreview] = useState<string | null>(null);
+  const [isUploadingOrgLogo, setIsUploadingOrgLogo] = useState(false);
+  const orgLogoInputRef = useRef<HTMLInputElement>(null);
 
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [isImpersonating, setIsImpersonating] = useState(false);
@@ -193,10 +216,14 @@ export default function DashboardPage() {
 
       if (orgResult.status === 'fulfilled') {
         const orgDataRes = await orgResult.value.json();
-        if (orgDataRes.success) {
+        if (orgDataRes.success && orgDataRes.organization) {
           setOrgData(orgDataRes.organization);
-          setOrgName(orgDataRes.organization.name);
-          setOrgSlug(orgDataRes.organization.slug);
+          setOrgName((prev) => (prev ? prev : orgDataRes.organization.name));
+          setOrgSlug((prev) => (prev ? prev : orgDataRes.organization.slug));
+          if (orgDataRes.organization.logo_url) {
+            setOrgLogoUrl(orgDataRes.organization.logo_url);
+            setOrgLogoPreview((prev) => (prev ? prev : orgDataRes.organization.logo_url));
+          }
         }
       }
 
@@ -297,7 +324,7 @@ export default function DashboardPage() {
           await fetchDashboardData();
         }
         scheduleNextPoll();
-      }, 3500);
+      }, 6000);
     };
 
     const handleWindowFocus = () => {
@@ -680,7 +707,7 @@ export default function DashboardPage() {
       const res = await fetch('/api/organization', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: orgName, slug: orgSlug }),
+        body: JSON.stringify({ name: orgName, slug: orgSlug, logo_url: orgLogoUrl }),
       });
       const data = await res.json();
       if (data.success) {
@@ -819,17 +846,32 @@ export default function DashboardPage() {
 
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-2 text-xs font-semibold text-emerald-400 uppercase tracking-wider">
-            <Activity className="w-4 h-4" />
-            <span>Multi-Tenant Operations</span>
+        <div className="flex items-center space-x-4">
+          {orgData?.logo_url ? (
+            <div className="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 p-2 flex items-center justify-center overflow-hidden flex-shrink-0 shadow-lg">
+              <img
+                src={orgData.logo_url}
+                alt={orgData.name || 'Organization Logo'}
+                className="w-full h-full object-contain"
+              />
+            </div>
+          ) : (
+            <div className="w-14 h-14 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-extrabold text-lg flex-shrink-0 shadow-lg">
+              {orgData?.name ? orgData.name.slice(0, 2).toUpperCase() : 'VN'}
+            </div>
+          )}
+          <div>
+            <div className="flex items-center space-x-2 text-xs font-semibold text-emerald-400 uppercase tracking-wider">
+              <Activity className="w-4 h-4" />
+              <span>Multi-Tenant Operations</span>
+            </div>
+            <h1 className="text-3xl font-extrabold text-white tracking-tight">
+              {orgData?.name || 'Organization Console'}
+            </h1>
+            <p className="text-sm text-slate-400">
+              Tenant: <span className="font-mono text-slate-300">/{orgData?.slug || 'acme-global'}</span> • Plan: <span className="text-emerald-400 font-semibold">{stats?.planName || 'Pro'}</span>
+            </p>
           </div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight">
-            {orgData?.name || 'Organization Console'}
-          </h1>
-          <p className="text-sm text-slate-400">
-            Tenant: <span className="font-mono text-slate-300">/{orgData?.slug || 'acme-global'}</span> • Plan: <span className="text-emerald-400 font-semibold">{stats?.planName || 'Pro'}</span>
-          </p>
         </div>
 
         <div className="flex items-center space-x-3">
@@ -1620,6 +1662,91 @@ export default function DashboardPage() {
           </div>
 
           <form onSubmit={handleSaveOrganization} className="space-y-4">
+            {/* Organization Logo in Settings */}
+            <div className="space-y-2 p-4 rounded-xl bg-slate-950/80 border border-slate-800">
+              <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                <span className="flex items-center space-x-1.5">
+                  <ImageIcon className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Official Organization Logo</span>
+                </span>
+                <span className="text-[11px] text-slate-500">PNG, JPG, WebP (Max 5MB)</span>
+              </label>
+
+              <div className="flex items-center space-x-3 pt-1">
+                {orgLogoPreview ? (
+                  <div className="w-14 h-14 rounded-xl border border-emerald-500/40 bg-slate-900 p-1 flex items-center justify-center overflow-hidden flex-shrink-0 shadow-md">
+                    <img
+                      src={orgLogoPreview}
+                      alt="Organization logo preview"
+                      className="w-full h-full object-contain rounded-lg"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-14 h-14 rounded-xl border border-dashed border-slate-700 bg-slate-900/50 flex flex-col items-center justify-center text-slate-500 flex-shrink-0">
+                    <ImageIcon className="w-5 h-5 text-slate-600 mb-0.5" />
+                    <span className="text-[9px]">No logo</span>
+                  </div>
+                )}
+
+                <div className="space-y-1.5 flex-1">
+                  <input
+                    ref={orgLogoInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg,image/webp"
+                    className="hidden"
+                    id="admin-org-logo-upload"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (file.size > 5 * 1024 * 1024) {
+                        alert('Logo image must be under 5MB');
+                        return;
+                      }
+                      setIsUploadingOrgLogo(true);
+                      try {
+                        const fd = new FormData();
+                        fd.append('logo', file);
+                        if (orgData?.id) fd.append('orgId', orgData.id);
+                        let res = await fetch('/api/organization/logo', {
+                          method: 'POST',
+                          body: fd,
+                        });
+                        if (!res.ok) {
+                          res = await fetch('/api/admin/organizations/logo', {
+                            method: 'POST',
+                            body: fd,
+                          });
+                        }
+                        const data = await res.json();
+                        if (data.success && data.logo_url) {
+                          setOrgLogoUrl(data.logo_url);
+                          setOrgLogoPreview(data.logo_url);
+                          setOrgData((prev: any) => ({ ...prev, logo_url: data.logo_url }));
+                          alert('Logo uploaded successfully!');
+                        } else {
+                          alert(data.error || 'Failed to upload logo');
+                        }
+                      } catch (err: any) {
+                        alert(err.message || 'Error uploading logo');
+                      } finally {
+                        setIsUploadingOrgLogo(false);
+                      }
+                    }}
+                  />
+                  <label
+                    htmlFor="admin-org-logo-upload"
+                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg border border-slate-700 cursor-pointer transition shadow-sm"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{isUploadingOrgLogo ? 'Uploading...' : orgLogoPreview ? 'Change Logo' : 'Upload Logo'}</span>
+                  </label>
+                  <p className="text-[11px] text-slate-400">
+                    This logo appears dynamically on the translator booth and public audience listening links.
+                  </p>
+                </div>
+              </div>
+            </div>
+
             <div className="space-y-1">
               <label className="text-xs font-semibold text-slate-300">Organization Name</label>
               <input

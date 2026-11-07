@@ -59,6 +59,7 @@ export interface Organization {
   admin_name?: string;
   admin_email?: string;
   contact_number?: string;
+  logo_url?: string;
   admin_user_id?: string;
   created_at: string;
   updated_at: string;

@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { name, slug, admin_name, admin_email, contact_number, status, plan_id } = body;
+    const { name, slug, admin_name, admin_email, contact_number, logo_url, status, plan_id } = body;
 
     // 2. Validate required fields
     if (!name || typeof name !== 'string' || !name.trim()) {
@@ -61,12 +61,27 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Create organization with admin account integration & duplicate validation
+    // Validate and normalize Indian contact number (+91 XXXXX XXXXX)
+    let normalizedContactNumber: string | undefined = undefined;
+    if (contact_number && typeof contact_number === 'string' && contact_number.trim()) {
+      const cleanNum = contact_number.trim().replace(/[\s\-\(\)]/g, '');
+      const indianMatch = cleanNum.match(/^(?:\+?91|0)?([6-9]\d{9})$/);
+      if (!indianMatch) {
+        return NextResponse.json(
+          { success: false, error: 'Please enter a valid 10-digit Indian phone number starting with 6, 7, 8, or 9 (e.g. +91 98765 43210).' },
+          { status: 400 }
+        );
+      }
+      normalizedContactNumber = `+91${indianMatch[1]}`;
+    }
+
     const result = await Repository.createOrganization({
       name: name.trim(),
       slug: slug?.trim() || undefined,
       admin_name: admin_name?.trim() || undefined,
       admin_email: admin_email.trim().toLowerCase(),
-      contact_number: contact_number?.trim() || undefined,
+      contact_number: normalizedContactNumber,
+      logo_url: logo_url?.trim() || undefined,
       status: status === 'inactive' ? 'inactive' : 'active',
       plan_id: plan_id || undefined,
     });
