@@ -105,82 +105,82 @@ export default function NavAuthLinks({ session, displayName, initialAvatar }: Na
     pathname.startsWith('/super-admin/signup') ||
     pathname.startsWith('/super-admin/setup');
 
-  // Authenticated as Admin: Display name ONCE with avatar & clean dropdown (My Profile & Logout in red)
+  // Authenticated as Admin: Display name with avatar and dropdown containing Dashboard, My Profile, Logout
   if (session?.role === 'admin') {
     return (
-      <div className="flex items-center space-x-3">
-        <Link
-          href="/dashboard"
-          className="text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition flex items-center space-x-1.5 text-xs sm:text-sm font-medium"
+      <div className="relative" ref={dropdownRef}>
+        <button
+          onClick={() => setDropdownOpen(!dropdownOpen)}
+          className="flex items-center space-x-2.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-900/90 dark:hover:bg-slate-800/90 border border-emerald-500/30 hover:border-emerald-500/50 transition shadow-sm text-left group"
+          aria-haspopup="true"
+          aria-expanded={dropdownOpen}
         >
-          <Activity className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
-          <span>Dashboard</span>
-        </Link>
-
-        <div className="relative pl-2 border-l border-slate-200 dark:border-slate-800" ref={dropdownRef}>
-          <button
-            onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="flex items-center space-x-2.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-900/90 dark:hover:bg-slate-800/90 border border-emerald-500/30 hover:border-emerald-500/50 transition shadow-sm text-left group"
-            aria-haspopup="true"
-            aria-expanded={dropdownOpen}
-          >
-            {/* Avatar / Profile Picture */}
-            {currentAvatar ? (
-              <img
-                src={currentAvatar}
-                alt={nameToDisplay}
-                className="w-7 h-7 rounded-full object-cover border border-emerald-500/50 shrink-0 shadow-sm"
-              />
-            ) : (
-              <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-emerald-500 to-emerald-600 flex items-center justify-center text-slate-950 font-bold text-xs shrink-0 shadow-sm">
-                {nameToDisplay ? nameToDisplay.charAt(0).toUpperCase() : 'A'}
-              </div>
-            )}
-
-            {/* Admin Name - Rendered ONCE */}
-            <span className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 group-hover:text-emerald-500 dark:group-hover:text-emerald-400 transition max-w-[140px] sm:max-w-[180px] truncate">
-              {nameToDisplay}
-            </span>
-
-            {/* Dropdown Chevron */}
-            <ChevronDown
-              className={`w-3.5 h-3.5 text-slate-400 dark:text-slate-400 transition-transform duration-200 ${
-                dropdownOpen ? 'rotate-180 text-emerald-500 dark:text-emerald-400' : ''
-              }`}
+          {/* Avatar / Profile Picture */}
+          {currentAvatar ? (
+            <img
+              src={currentAvatar}
+              alt={nameToDisplay}
+              className="w-7 h-7 rounded-full object-cover border border-emerald-500/50 shrink-0 shadow-sm"
             />
-          </button>
-
-          {/* Clean, compact dropdown menu */}
-          {dropdownOpen && (
-            <div className="absolute right-0 mt-2 w-48 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl p-1.5 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
-              {/* Option 1: My Profile */}
-              <Link
-                href="/dashboard/profile"
-                onClick={() => setDropdownOpen(false)}
-                className="flex items-center space-x-2.5 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/80 rounded-lg transition"
-              >
-                <User className="w-4 h-4 text-emerald-500 dark:text-emerald-400 shrink-0" />
-                <span>My Profile</span>
-              </Link>
-
-              <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
-
-              {/* Option 2: Logout (styled in red) */}
-              <a
-                href="/api/auth/logout"
-                className="flex items-center space-x-2.5 px-3 py-2 text-xs sm:text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-500/10 dark:hover:bg-red-500/15 rounded-lg transition"
-              >
-                <LogOut className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
-                <span>Logout</span>
-              </a>
+          ) : (
+            <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-emerald-500 to-emerald-600 flex items-center justify-center text-slate-950 font-bold text-xs shrink-0 shadow-sm">
+              {nameToDisplay ? nameToDisplay.charAt(0).toUpperCase() : 'A'}
             </div>
           )}
-        </div>
+
+          {/* Admin Name - Rendered ONCE */}
+          <span className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 group-hover:text-emerald-500 dark:group-hover:text-emerald-400 transition max-w-[140px] sm:max-w-[180px] truncate">
+            {nameToDisplay}
+          </span>
+
+          {/* Dropdown Chevron */}
+          <ChevronDown
+            className={`w-3.5 h-3.5 text-slate-400 dark:text-slate-400 transition-transform duration-200 ${
+              dropdownOpen ? 'rotate-180 text-emerald-500 dark:text-emerald-400' : ''
+            }`}
+          />
+        </button>
+
+        {/* Clean, compact dropdown menu */}
+        {dropdownOpen && (
+          <div className="absolute right-0 mt-2 w-48 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl p-1.5 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+            {/* Option 1: Dashboard */}
+            <Link
+              href="/dashboard"
+              onClick={() => setDropdownOpen(false)}
+              className="flex items-center space-x-2.5 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/80 rounded-lg transition"
+            >
+              <Activity className="w-4 h-4 text-emerald-500 dark:text-emerald-400 shrink-0" />
+              <span>Dashboard</span>
+            </Link>
+
+            {/* Option 2: My Profile */}
+            <Link
+              href="/dashboard/profile"
+              onClick={() => setDropdownOpen(false)}
+              className="flex items-center space-x-2.5 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/80 rounded-lg transition"
+            >
+              <User className="w-4 h-4 text-emerald-500 dark:text-emerald-400 shrink-0" />
+              <span>My Profile</span>
+            </Link>
+
+            <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+
+            {/* Option 3: Logout */}
+            <a
+              href="/api/auth/logout"
+              className="flex items-center space-x-2.5 px-3 py-2 text-xs sm:text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-500/10 dark:hover:bg-red-500/15 rounded-lg transition"
+            >
+              <LogOut className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
+              <span>Logout</span>
+            </a>
+          </div>
+        )}
       </div>
     );
   }
 
-  // Authenticated as Super Admin: Render name only once with avatar and clean dropdown
+  // Authenticated as Super Admin: Display name with avatar and dropdown containing Dashboard, My Profile, Logout
   if (session?.role === 'super_admin') {
     return (
       <div className="relative" ref={dropdownRef}>
@@ -219,7 +219,17 @@ export default function NavAuthLinks({ session, displayName, initialAvatar }: Na
         {/* Clean, compact dropdown menu */}
         {dropdownOpen && (
           <div className="absolute right-0 mt-2 w-48 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl p-1.5 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
-            {/* Option 1: My Profile */}
+            {/* Option 1: Dashboard */}
+            <Link
+              href="/admin"
+              onClick={() => setDropdownOpen(false)}
+              className="flex items-center space-x-2.5 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/80 rounded-lg transition"
+            >
+              <Shield className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0" />
+              <span>Dashboard</span>
+            </Link>
+
+            {/* Option 2: My Profile */}
             <Link
               href="/admin/profile"
               onClick={() => setDropdownOpen(false)}
@@ -231,7 +241,7 @@ export default function NavAuthLinks({ session, displayName, initialAvatar }: Na
 
             <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
 
-            {/* Option 2: Logout (styled in red) */}
+            {/* Option 3: Logout */}
             <a
               href="/api/auth/logout"
               className="flex items-center space-x-2.5 px-3 py-2 text-xs sm:text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-500/10 dark:hover:bg-red-500/15 rounded-lg transition"

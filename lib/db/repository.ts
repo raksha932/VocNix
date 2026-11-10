@@ -37,6 +37,7 @@ interface DataStore {
   activityLogs: ActivityLog[];
   profiles: Map<string, Profile>;
   passwords: Map<string, string>;
+  systemSettings: Map<string, any>;
 }
 
 declare global {
@@ -70,6 +71,7 @@ function persistStoreToDisk(s: DataStore) {
       translationRooms: Array.from(s.translationRooms.entries()),
       translators: Array.from(s.translators.entries()),
       translatorAssignments: Array.from(s.translatorAssignments.entries()),
+      systemSettings: Array.from(s.systemSettings ? s.systemSettings.entries() : []),
     };
     fs.writeFileSync(filePath, JSON.stringify(dataToSave, null, 2), 'utf8');
     try { lastStoreLoadTime = fs.statSync(filePath).mtimeMs; } catch {}
@@ -146,6 +148,9 @@ function loadStoreFromDisk(s: DataStore) {
         s.translatorAssignments.set(id, asgn);
       }
     }
+    if (parsed.systemSettings && Array.isArray(parsed.systemSettings)) {
+      s.systemSettings = new Map(parsed.systemSettings);
+    }
   } catch (err) {
     console.warn('[Repository] Failed to load store from disk:', err);
   }
@@ -166,6 +171,7 @@ function initMemoryStore(): DataStore {
     activityLogs: [],
     profiles: new Map(),
     passwords: new Map(),
+    systemSettings: new Map(),
   };
 
   const defaultSuperAdmin: Profile = {
@@ -1651,6 +1657,18 @@ export const Repository = {
     if (updates.plan_id !== undefined) org.plan_id = updates.plan_id;
     org.updated_at = now;
     store.organizations.set(orgId, org);
+
+    // Synchronize associated Admin Profile if present
+    const adminUserId = org.admin_user_id;
+    if (adminUserId && store.profiles.has(adminUserId)) {
+      const prof = store.profiles.get(adminUserId)!;
+      if (updates.admin_email) prof.email = updates.admin_email.trim().toLowerCase();
+      if (updates.admin_name) prof.full_name = updates.admin_name.trim();
+      if (updates.contact_number !== undefined) prof.phone = updates.contact_number.trim();
+      prof.updated_at = now;
+      store.profiles.set(adminUserId, prof);
+    }
+
     persistStoreToDisk(store);
     await this.logActivity(orgId, 'ORGANIZATION_UPDATED', `Organization details updated to "${org.name}"`);
     return org;
@@ -3055,5 +3073,22 @@ export const Repository = {
       if (p.role === 'super_admin') return true;
     }
     return false;
+  },
+
+  async getSystemSetting<T = any>(key: string, defaultValue?: T): Promise<T | null> {
+    syncStoreFromDiskIfNeeded(store);
+    if (store.systemSettings && store.systemSettings.has(key)) {
+      return store.systemSettings.get(key) as T;
+    }
+    return defaultValue !== undefined ? defaultValue : null;
+  },
+
+  async setSystemSetting<T = any>(key: string, value: T): Promise<void> {
+    syncStoreFromDiskIfNeeded(store);
+    if (!store.systemSettings) {
+      store.systemSettings = new Map();
+    }
+    store.systemSettings.set(key, value);
+    persistStoreToDisk(store);
   },
 };

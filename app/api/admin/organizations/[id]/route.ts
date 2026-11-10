@@ -59,24 +59,46 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     // 5. Update Organization Details / Logo
     if (action === 'update' || action === 'update_logo') {
-      const { name, admin_name, contact_number, logo_url } = body;
-      let normalizedPhone: string | undefined = undefined;
-      if (contact_number && typeof contact_number === 'string' && contact_number.trim()) {
-        const cleanNum = contact_number.trim().replace(/[\s\-\(\)]/g, '');
-        const match = cleanNum.match(/^(?:\+?91|0)?([6-9]\d{9})$/);
-        if (match) {
-          normalizedPhone = `+91${match[1]}`;
-        } else {
-          normalizedPhone = contact_number.trim();
+      const { name, admin_name, admin_email, contact_number, slug, status, plan_id, logo_url } = body;
+
+      if (name !== undefined && (!name || !name.trim())) {
+        return NextResponse.json({ success: false, error: 'Organization name cannot be empty' }, { status: 400 });
+      }
+
+      if (admin_email !== undefined) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(admin_email.trim())) {
+          return NextResponse.json({ success: false, error: 'Please enter a valid administrator email address' }, { status: 400 });
         }
       }
-      const org = await Repository.updateOrganization(params.id, {
-        name: name?.trim(),
-        admin_name: admin_name?.trim(),
-        contact_number: normalizedPhone,
-        logo_url: logo_url?.trim(),
-      });
-      if (!org) return NextResponse.json({ success: false, error: 'Org not found' }, { status: 404 });
+
+      let normalizedPhone: string | undefined = undefined;
+      if (contact_number !== undefined) {
+        if (contact_number && typeof contact_number === 'string' && contact_number.trim()) {
+          const cleanNum = contact_number.trim().replace(/[\s\-\(\)]/g, '');
+          const match = cleanNum.match(/^(?:\+?91|0)?([6-9]\d{9})$/);
+          if (match) {
+            normalizedPhone = `+91${match[1]}`;
+          } else {
+            normalizedPhone = contact_number.trim();
+          }
+        } else {
+          normalizedPhone = '';
+        }
+      }
+
+      const updates: any = {};
+      if (name !== undefined) updates.name = name.trim();
+      if (admin_name !== undefined) updates.admin_name = admin_name.trim();
+      if (admin_email !== undefined) updates.admin_email = admin_email.trim().toLowerCase();
+      if (normalizedPhone !== undefined) updates.contact_number = normalizedPhone;
+      if (slug !== undefined) updates.slug = slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+      if (status !== undefined) updates.status = status;
+      if (plan_id !== undefined) updates.plan_id = plan_id;
+      if (logo_url !== undefined) updates.logo_url = logo_url.trim();
+
+      const org = await Repository.updateOrganization(params.id, updates);
+      if (!org) return NextResponse.json({ success: false, error: 'Organization not found' }, { status: 404 });
       return NextResponse.json({ success: true, organization: org, message: 'Organization updated successfully' });
     }
 

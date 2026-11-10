@@ -30,6 +30,7 @@ import {
   Phone,
   Shield,
   Check,
+  Pencil,
 } from 'lucide-react';
 
 
@@ -86,6 +87,132 @@ export default function SuperAdminPage() {
   const createOrgModalRef = useRef<HTMLDivElement>(null);
   const createOrgFormBodyRef = useRef<HTMLDivElement>(null);
 
+  // Individual Organization Edit Modal State
+  const [editingOrg, setEditingOrg] = useState<any | null>(null);
+  const [editOrgName, setEditOrgName] = useState('');
+  const [editOrgAdminName, setEditOrgAdminName] = useState('');
+  const [editOrgAdminEmail, setEditOrgAdminEmail] = useState('');
+  const [editOrgContactNumber, setEditOrgContactNumber] = useState('');
+  const [editOrgSlug, setEditOrgSlug] = useState('');
+  const [editOrgStatus, setEditOrgStatus] = useState<'active' | 'inactive' | 'suspended'>('active');
+  const [editOrgPlanId, setEditOrgPlanId] = useState('');
+  const [editOrgLogoPreview, setEditOrgLogoPreview] = useState<string | null>(null);
+  const [editOrgLogoFile, setEditOrgLogoFile] = useState<File | null>(null);
+  const [isUpdatingOrg, setIsUpdatingOrg] = useState(false);
+  const [editOrgError, setEditOrgError] = useState<string | null>(null);
+  const editOrgModalRef = useRef<HTMLDivElement>(null);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleOpenEditOrgModal = (org: any) => {
+    setEditingOrg(org);
+    setEditOrgName(org.name || '');
+    setEditOrgAdminName(org.admin_name || org.adminUser?.full_name || '');
+    setEditOrgAdminEmail(org.admin_email || org.adminUser?.email || '');
+    let phoneDigits = '';
+    const phoneSource = org.contact_number || org.adminUser?.phone || '';
+    if (phoneSource) {
+      phoneDigits = phoneSource.replace(/\D/g, '');
+      if (phoneDigits.startsWith('91') && phoneDigits.length === 12) {
+        phoneDigits = phoneDigits.slice(2);
+      }
+    }
+    setEditOrgContactNumber(phoneDigits);
+    setEditOrgSlug(org.slug || '');
+    setEditOrgStatus((org.status as 'active' | 'inactive' | 'suspended') || 'active');
+    setEditOrgPlanId(org.plan_id || (plans[0]?.id || ''));
+    setEditOrgLogoPreview(org.logo_url || null);
+    setEditOrgLogoFile(null);
+    setEditOrgError(null);
+  };
+
+  const handleUpdateOrg = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingOrg) return;
+
+    if (!editOrgName.trim()) {
+      setEditOrgError('Organization Name cannot be empty.');
+      return;
+    }
+    if (!editOrgAdminEmail.trim()) {
+      setEditOrgError('Admin Email cannot be empty.');
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(editOrgAdminEmail.trim())) {
+      setEditOrgError('Please enter a valid administrator email address (e.g. name@domain.com).');
+      return;
+    }
+
+    const rawDigits = editOrgContactNumber.replace(/\D/g, '');
+    if (rawDigits.length > 0) {
+      if (rawDigits.length !== 10) {
+        setEditOrgError('Please enter a valid 10-digit Indian phone number.');
+        return;
+      }
+      if (!['6', '7', '8', '9'].includes(rawDigits[0])) {
+        setEditOrgError('Indian mobile number must start with 6, 7, 8, or 9.');
+        return;
+      }
+    }
+
+    setIsUpdatingOrg(true);
+    setEditOrgError(null);
+
+    let finalLogoUrl: string = editOrgLogoPreview || '';
+    if (editOrgLogoFile) {
+      try {
+        const logoFormData = new FormData();
+        logoFormData.append('logo', editOrgLogoFile);
+        const logoRes = await fetch('/api/admin/organizations/logo', {
+          method: 'POST',
+          body: logoFormData,
+        });
+        const logoData = await logoRes.json();
+        if (!logoRes.ok || !logoData.success) {
+          setEditOrgError(logoData.error || 'Failed to upload organization logo.');
+          setIsUpdatingOrg(false);
+          return;
+        }
+        finalLogoUrl = logoData.logo_url;
+      } catch (uploadErr: any) {
+        setEditOrgError(uploadErr.message || 'Error uploading organization logo.');
+        setIsUpdatingOrg(false);
+        return;
+      }
+    }
+
+    try {
+      const res = await fetch(`/api/admin/organizations/${editingOrg.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update',
+          name: editOrgName.trim(),
+          admin_name: editOrgAdminName.trim() || undefined,
+          admin_email: editOrgAdminEmail.trim().toLowerCase(),
+          contact_number: rawDigits.length === 10 ? `+91${rawDigits}` : (rawDigits.length === 0 ? '' : undefined),
+          slug: editOrgSlug.trim() || undefined,
+          status: editOrgStatus,
+          plan_id: editOrgPlanId,
+          logo_url: finalLogoUrl,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setEditOrgError(data.error || 'Failed to update organization.');
+        setIsUpdatingOrg(false);
+        return;
+      }
+
+      await fetchAdminData();
+      setIsUpdatingOrg(false);
+      setEditingOrg(null);
+    } catch (err: any) {
+      setEditOrgError(err.message || 'Failed to update organization.');
+      setIsUpdatingOrg(false);
+    }
+  };
   const handleOpenCreateOrgModal = () => {
     setCreateOrgError(null);
     setIsAddOrgModalOpen(true);
@@ -599,7 +726,7 @@ export default function SuperAdminPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h2 className="text-xl font-bold text-white tracking-tight">Manage All Organizations</h2>
-            <p className="text-xs text-slate-400">Control subscription tiers, suspension, trial periods, and direct admin impersonation</p>
+            <p className="text-xs text-slate-400 mt-1">Control subscription tiers, suspension, trial periods, and direct admin impersonation</p>
           </div>
 
           <div className="flex items-center gap-3">
@@ -658,7 +785,17 @@ export default function SuperAdminPage() {
                           </div>
                         )}
                         <div>
-                          <div className="font-bold text-white text-sm">{org.name}</div>
+                          <div className="flex items-center space-x-2">
+                            <div className="font-bold text-white text-sm">{org.name}</div>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditOrgModal(org)}
+                              title={`Edit ${org.name}`}
+                              className="p-1 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded transition cursor-pointer"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                           <div className="font-mono text-[10px] text-slate-500">/{org.slug}</div>
                         </div>
                       </div>
@@ -723,6 +860,17 @@ export default function SuperAdminPage() {
 
                     <td className="text-right">
                       <div className="flex items-center justify-end space-x-2">
+                        {/* Edit Organization */}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditOrgModal(org)}
+                          disabled={updatingOrgId === org.id}
+                          title={`Edit ${org.name}`}
+                          className="p-1.5 bg-amber-500/10 hover:bg-amber-500/25 text-amber-400 hover:text-amber-300 rounded-lg border border-amber-500/30 transition flex items-center justify-center cursor-pointer"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+
                         {/* Quick Impersonate in Table */}
                         <button
                           onClick={() => {
@@ -823,26 +971,28 @@ export default function SuperAdminPage() {
             className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full shadow-2xl relative my-auto max-h-[calc(100vh-2rem)] sm:max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
           >
             {/* Modal Header */}
-            <div className="flex-shrink-0 p-5 sm:p-6 pb-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900">
-              <div className="flex items-center space-x-2.5">
-                <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
-                  <Building className="w-5 h-5" />
+            <div className="flex-shrink-0 p-5 sm:p-6 pb-4 border-b border-slate-800/80 bg-slate-900">
+              <div className="flex items-start justify-between">
+                <div className="flex items-start space-x-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
+                    <Building className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white tracking-tight">Create Organization</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">Provision a new tenant organization with an integrated administrator account</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-base font-bold text-white tracking-tight">Create Organization</h3>
-                  <p className="text-xs text-slate-400">Provision a new tenant organization with an integrated administrator account</p>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddOrgModalOpen(false);
+                    setCreateOrgError(null);
+                                      }}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAddOrgModalOpen(false);
-                  setCreateOrgError(null);
-                }}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
 
             {createOrgError && (
@@ -1089,6 +1239,289 @@ export default function SuperAdminPage() {
         </div>
       )}
     
+      {/* Edit Organization Modal */}
+      {editingOrg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md overflow-hidden animate-in fade-in duration-200">
+          <div
+            ref={editOrgModalRef}
+            className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full shadow-2xl relative my-auto max-h-[calc(100vh-2rem)] sm:max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+          >
+            {/* Modal Header */}
+            <div className="flex-shrink-0 p-5 sm:p-6 pb-4 border-b border-slate-800/80 bg-slate-900">
+              <div className="flex items-start justify-between">
+                <div className="flex items-start space-x-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
+                    <Pencil className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white tracking-tight">Edit Organization</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">Update details, administrator credentials, and subscription status for <span className="text-amber-400 font-semibold">{editingOrg.name}</span></p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingOrg(null);
+                    setEditOrgError(null);
+                  }}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {editOrgError && (
+              <div className="flex-shrink-0 mx-5 sm:mx-6 mt-4 p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 flex items-start space-x-2.5 text-red-300 text-xs">
+                <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <strong className="font-semibold text-red-200">Validation Error: </strong>
+                  <span>{editOrgError}</span>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateOrg} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="space-y-4 text-xs overflow-y-auto px-5 sm:px-6 py-4 flex-1 overscroll-contain">
+                {/* Organization Logo */}
+                <div className="space-y-1.5 p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                  <label className="font-semibold text-slate-300 flex items-center justify-between">
+                    <span className="flex items-center space-x-1.5">
+                      <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Organization Logo</span>
+                    </span>
+                    <span className="text-slate-500 font-normal">PNG, JPG, WebP (Max 5MB)</span>
+                  </label>
+
+                  <div className="flex items-center space-x-3 pt-1">
+                    {editOrgLogoPreview ? (
+                      <div className="relative group w-14 h-14 rounded-xl border border-amber-500/40 bg-slate-900 p-1 flex items-center justify-center overflow-hidden flex-shrink-0 shadow-md">
+                        <img
+                          src={editOrgLogoPreview}
+                          alt="Logo preview"
+                          className="w-full h-full object-contain rounded-lg"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditOrgLogoPreview(null);
+                            setEditOrgLogoFile(null);
+                          }}
+                          title="Remove logo"
+                          className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 flex items-center justify-center text-red-400 transition"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="w-14 h-14 rounded-xl border border-dashed border-slate-700 bg-slate-900/50 flex flex-col items-center justify-center text-slate-500 flex-shrink-0">
+                        <ImageIcon className="w-5 h-5 text-slate-600 mb-0.5" />
+                        <span className="text-[9px]">No logo</span>
+                      </div>
+                    )}
+
+                    <div className="flex-1 space-y-1">
+                      <input
+                        ref={editFileInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/jpg,image/webp"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          if (file.size > 5 * 1024 * 1024) {
+                            setEditOrgError('Logo image size exceeds 5MB limit.');
+                            return;
+                          }
+                          setEditOrgLogoFile(file);
+                          const reader = new FileReader();
+                          reader.onload = () => {
+                            setEditOrgLogoPreview(reader.result as string);
+                          };
+                          reader.readAsDataURL(file);
+                        }}
+                        className="hidden"
+                        id="edit-org-logo-upload"
+                      />
+                      <label
+                        htmlFor="edit-org-logo-upload"
+                        className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 active:scale-[0.98] text-slate-200 text-xs font-semibold rounded-lg border border-slate-700 cursor-pointer transition shadow-sm"
+                      >
+                        <Upload className="w-3.5 h-3.5 text-amber-400" />
+                        <span>{editOrgLogoPreview ? 'Change Logo' : 'Upload Logo'}</span>
+                      </label>
+                      <p className="text-[11px] text-slate-400">
+                        {editOrgLogoFile ? editOrgLogoFile.name : 'Upload or replace the organization logo'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 1. Organization Name */}
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-slate-300 flex items-center justify-between">
+                    <span>Organization Name *</span>
+                    <span className="text-slate-500 font-normal">Display name</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Apex Global Tech"
+                    value={editOrgName}
+                    onChange={(e) => setEditOrgName(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 transition"
+                  />
+                </div>
+
+                {/* 2. Organization Admin Name */}
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-slate-300 flex items-center justify-between">
+                    <span>Organization Admin Name</span>
+                    <span className="text-slate-500 font-normal">Administrator contact name</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Sarah Jenkins"
+                    value={editOrgAdminName}
+                    onChange={(e) => setEditOrgAdminName(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 transition"
+                  />
+                </div>
+
+                {/* 3. Admin Email */}
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-slate-300 flex items-center justify-between">
+                    <span>Admin Email *</span>
+                    <span className="text-slate-500 font-normal">For login & notifications</span>
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="admin@organization.com"
+                    value={editOrgAdminEmail}
+                    onChange={(e) => setEditOrgAdminEmail(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 transition font-mono"
+                  />
+                </div>
+
+                {/* 4. Contact Number */}
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-slate-300 flex items-center justify-between">
+                    <span className="flex items-center space-x-1.5">
+                      <Phone className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Contact Number (India)</span>
+                    </span>
+                    <span className="text-slate-500 font-normal">+91 XXXXX XXXXX</span>
+                  </label>
+                  <div className="relative flex items-center">
+                    <div className="absolute left-2.5 flex items-center space-x-1.5 text-slate-300 font-semibold text-xs border-r border-slate-800 pr-2 pointer-events-none select-none">
+                      <span className="text-sm">🇮🇳</span>
+                      <span className="font-mono text-slate-200">+91</span>
+                    </div>
+                    <input
+                      type="tel"
+                      placeholder="98765 43210"
+                      value={editOrgContactNumber}
+                      maxLength={10}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/\D/g, '').slice(0, 10);
+                        setEditOrgContactNumber(raw);
+                      }}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-16 pr-3.5 py-2.5 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-amber-500 transition font-mono tracking-wide"
+                    />
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    Enter 10-digit Indian mobile number (starts with 6, 7, 8, or 9).
+                  </p>
+                </div>
+
+                {/* 5. Organization Status & Subscription Plan */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-slate-300">Organization Status</label>
+                    <select
+                      value={editOrgStatus}
+                      onChange={(e) => setEditOrgStatus(e.target.value as 'active' | 'inactive' | 'suspended')}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-semibold"
+                    >
+                      <option value="active">Active (Operational)</option>
+                      <option value="inactive">Inactive (Pending Setup)</option>
+                      <option value="suspended">Suspended</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-slate-300">Subscription Plan</label>
+                    <select
+                      value={editOrgPlanId}
+                      onChange={(e) => setEditOrgPlanId(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-semibold"
+                    >
+                      {plans.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.includedMinutes} min quota)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* 6. Routing Slug */}
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-slate-300 flex items-center justify-between">
+                    <span>Routing Slug</span>
+                    <span className="text-slate-500 font-normal">URL identifier</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="apex-global"
+                      value={editOrgSlug}
+                      onChange={(e) => setEditOrgSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-3.5 pr-20 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 transition font-mono"
+                    />
+                    <span className="absolute right-3.5 top-3 text-[10px] text-slate-500 font-mono select-none">
+                      .vocnix.com
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer with Save Changes and Cancel buttons */}
+              <div className="flex-shrink-0 p-4 sm:p-5 border-t border-slate-800/80 bg-slate-900/90 flex items-center justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingOrg(null);
+                    setEditOrgError(null);
+                  }}
+                  disabled={isUpdatingOrg}
+                  className="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingOrg}
+                  className="px-5 py-2 text-xs font-bold rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-slate-950 transition flex items-center space-x-2 shadow-lg shadow-amber-500/20 disabled:opacity-60 cursor-pointer"
+                >
+                  {isUpdatingOrg ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin" />
+                      <span>Saving Changes...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-slate-950" />
+                      <span>Save Changes</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Delete Confirmation Modal */}
       {orgToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-150">
