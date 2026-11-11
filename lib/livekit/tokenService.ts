@@ -17,6 +17,7 @@ function isPlaceholder(val: string): boolean {
   if (!val) return true;
   const lower = val.toLowerCase();
   return (
+    val.includes('•') ||
     lower.includes('your-project') ||
     lower.includes('your-audio-server') ||
     lower.includes('your-api-key') ||
@@ -47,6 +48,7 @@ export function getLiveKitConfig(): LiveKitConfig {
     !isPlaceholder(apiKey) &&
     !isPlaceholder(apiSecret) &&
     !url.includes('•') &&
+    !apiSecret.includes('•') &&
     (url.startsWith('ws://') || url.startsWith('wss://'))
   );
 
@@ -64,6 +66,12 @@ export async function createTranslatorToken(params: {
   translatorName: string;
 }): Promise<string> {
   const config = getLiveKitConfig();
+
+  if (config.apiSecret && config.apiSecret.includes('•')) {
+    throw new Error(
+      'LIVEKIT_API_SECRET contains masked bullet characters (••••••••). You must copy the actual plaintext secret from LiveKit Cloud. If masked, generate a new key on cloud.livekit.io and copy the revealed secret.'
+    );
+  }
 
   if (!config.isConfigured) {
     throw new Error(
@@ -93,6 +101,12 @@ export async function createAudienceToken(params: {
   listenerIdentity: string;
 }): Promise<string> {
   const config = getLiveKitConfig();
+
+  if (config.apiSecret && config.apiSecret.includes('•')) {
+    throw new Error(
+      'LIVEKIT_API_SECRET contains masked bullet characters (••••••••). You must copy the actual plaintext secret from LiveKit Cloud. If masked, generate a new key on cloud.livekit.io and copy the revealed secret.'
+    );
+  }
 
   if (!config.isConfigured) {
     throw new Error(
