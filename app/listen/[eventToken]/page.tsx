@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Lock,
   ArrowRight,
+  LogOut,
 } from 'lucide-react';
 import { AudioService, AudioConnectionStatus } from '@/lib/audio/AudioService';
 
@@ -56,6 +57,7 @@ export default function AudienceListenPage() {
   const [isMuted, setIsMuted] = useState(false);
   const [hasRemoteTrack, setHasRemoteTrack] = useState(false);
   const [listenerCount, setListenerCount] = useState<number>(0);
+  const [isExiting, setIsExiting] = useState<boolean>(false);
 
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const audioServiceRef = useRef<AudioService | null>(null);
@@ -147,29 +149,36 @@ export default function AudienceListenPage() {
     initAudiencePage();
   }, [eventToken]);
 
-  // 2. Initialize Audio Engine & teardown listeners
-  useEffect(() => {
-    const service = new AudioService({
-      onConnectionChange: (status) => {
-        setAudioState(status);
-        if (status === 'connected') {
-          setAudioConnected(true);
-        } else if (status === 'disconnected' || status === 'error') {
-          setAudioConnected(false);
-        }
-      },
-      onParticipantCountChange: (count) => {
-        setListenerCount(count);
-      },
-      onRemoteTrackChange: (track) => {
-        setHasRemoteTrack(Boolean(track));
-      },
-      onError: (err) => {
-        setError(err.message);
-      },
-    });
+  // 2. Helper to get or lazily initialize AudioService
+  const getAudioService = () => {
+    if (!audioServiceRef.current) {
+      audioServiceRef.current = new AudioService({
+        onConnectionChange: (status) => {
+          setAudioState(status);
+          if (status === 'connected') {
+            setAudioConnected(true);
+          } else if (status === 'disconnected' || status === 'error') {
+            setAudioConnected(false);
+          }
+        },
+        onParticipantCountChange: (count) => {
+          if (count > 0) {
+            setListenerCount((prev) => Math.max(prev, count));
+          }
+        },
+        onRemoteTrackChange: (track) => {
+          setHasRemoteTrack(Boolean(track));
+        },
+        onError: (err) => {
+          setError(err.message);
+        },
+      });
+    }
+    return audioServiceRef.current;
+  };
 
-    audioServiceRef.current = service;
+  useEffect(() => {
+    const service = getAudioService();
 
     return () => {
       // Clean leave notification
@@ -220,12 +229,27 @@ export default function AudienceListenPage() {
     };
   }, []);
 
-  // 4. Periodic heartbeat while connected (every 10 seconds)
+  // 4. Real-time authoritative listener count synchronization (every 2.5 seconds)
   useEffect(() => {
-    if (!lockedLanguage?.roomId || !sessionKeyRef.current || !audioConnected) return;
+    if (!lockedLanguage?.roomId || !audioConnected) return;
 
-    const interval = setInterval(async () => {
+    const syncStats = async () => {
       try {
+        const res = await fetch(`/api/rooms/${lockedLanguage.roomId}/stats`, { cache: 'no-store' });
+        const data = await res.json();
+        if (data.success && typeof data.listenerCount === 'number') {
+          setListenerCount(data.listenerCount);
+        }
+      } catch {}
+    };
+
+    syncStats();
+    const statsTimer = setInterval(syncStats, 2500);
+
+    // Keep heartbeat alive every 10s
+    const heartbeatTimer = setInterval(async () => {
+      try {
+        if (!sessionKeyRef.current) return;
         const res = await fetch('/api/audience/heartbeat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -241,7 +265,10 @@ export default function AudienceListenPage() {
       } catch {}
     }, 10000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(statsTimer);
+      clearInterval(heartbeatTimer);
+    };
   }, [lockedLanguage?.roomId, audioConnected]);
 
   // 5. Connect to the validated, locked room
@@ -300,7 +327,8 @@ export default function AudienceListenPage() {
         resolvedWsUrl = resolvedWsUrl.replace('127.0.0.1', 'localhost');
       }
 
-      await audioServiceRef.current?.connectAudience({
+      const service = getAudioService();
+      await service.connectAudience({
         wsUrl: resolvedWsUrl,
         token: data.token,
         targetAudioElement: audioElementRef.current,
@@ -344,6 +372,63 @@ export default function AudienceListenPage() {
     setVolume(newVol);
     if (audioElementRef.current) {
       audioElementRef.current.volume = isMuted ? 0 : newVol;
+    }
+  };
+
+
+  // 7. Exit / Leave Session handler
+  const handleExitSession = async () => {
+    if (isExiting) return;
+    setIsExiting(true);
+
+    const roomId = lockedRoomRef.current || lockedLanguage?.roomId;
+    const sKey = sessionKeyRef.current;
+
+    try {
+      // 1. Disconnect audio immediately
+      if (audioServiceRef.current) {
+        audioServiceRef.current.disconnect();
+      }
+      setAudioConnected(false);
+      setAudioState('idle');
+      setHasRemoteTrack(false);
+
+      // 2. Notify backend to decrement listener count immediately
+      if (roomId && sKey) {
+        await fetch('/api/audience/leave', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomId, sessionKey: sKey, eventToken }),
+        }).catch(() => {});
+      }
+
+      // 3. Clear local storage locks & session keys
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('vocnix_locked_room_' + eventToken);
+        localStorage.removeItem('vocnix_locked_lang_' + eventToken);
+        sessionStorage.removeItem('vocnix_audience_session_' + eventToken);
+      }
+
+      // 4. Reset page state back to Step 1 (Language selection)
+      setIsLanguageLocked(false);
+      setLockedLanguage(null);
+
+      // Refresh available languages list from event
+      const searchStr = typeof window !== 'undefined' ? window.location.search : '';
+      const res = await fetch(`/api/audience/event/${eventToken}${searchStr}`, { cache: 'no-store' });
+      const data = await res.json();
+      if (data.success && data.languages) {
+        setAvailableLanguages(data.languages);
+        if (data.languages.length > 0) {
+          setPendingSelection(data.languages[0]);
+        }
+      }
+    } catch (err: any) {
+      console.error('Exit error:', err);
+      setIsLanguageLocked(false);
+      setLockedLanguage(null);
+    } finally {
+      setIsExiting(false);
     }
   };
 
@@ -606,6 +691,27 @@ export default function AudienceListenPage() {
               </p>
             </div>
           )}
+
+          {/* Exit / Leave Channel Action Button */}
+          <div className="pt-2 border-t border-slate-800/80">
+            <button
+              onClick={handleExitSession}
+              disabled={isExiting}
+              className="w-full py-3.5 px-4 rounded-2xl bg-slate-950 hover:bg-red-500/10 border border-slate-800 hover:border-red-500/40 text-slate-400 hover:text-red-300 font-semibold text-xs sm:text-sm flex items-center justify-center space-x-2 transition shadow-sm active:scale-[0.99] disabled:opacity-50"
+            >
+              {isExiting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-red-400" />
+                  <span>Exiting Channel...</span>
+                </>
+              ) : (
+                <>
+                  <LogOut className="w-4 h-4 text-red-400" />
+                  <span>Exit Session / Change Language</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       )}
     </div>

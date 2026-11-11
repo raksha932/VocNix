@@ -324,7 +324,7 @@ export default function DashboardPage() {
           await fetchDashboardData();
         }
         scheduleNextPoll();
-      }, 6000);
+      }, 2500);
     };
 
     const handleWindowFocus = () => {

@@ -16,18 +16,43 @@ export async function POST(req: NextRequest) {
       } catch {}
     }
 
-    const { roomId, sessionKey } = body;
+    const { roomId, sessionKey, eventToken } = body;
 
     if (!roomId || !sessionKey) {
       return NextResponse.json({ success: false, error: 'roomId and sessionKey required' }, { status: 400 });
     }
 
     const updatedListeners = await Repository.registerAudienceLeave(roomId, sessionKey);
-    return NextResponse.json({
+
+    const response = NextResponse.json({
       success: true,
       listeners: updatedListeners,
       listenerCount: updatedListeners,
     });
+
+    // Clear audience lock cookies so listener can re-select language or exit cleanly
+    if (eventToken) {
+      const lockCookieName = `vocnix_audience_lock_${eventToken}`;
+      response.cookies.set(lockCookieName, '', {
+        path: '/',
+        maxAge: 0,
+        expires: new Date(0),
+      });
+    }
+
+    // Also clear any general audience lock cookies present on request
+    const allCookies = req.cookies.getAll();
+    for (const c of allCookies) {
+      if (c.name.startsWith('vocnix_audience_lock_')) {
+        response.cookies.set(c.name, '', {
+          path: '/',
+          maxAge: 0,
+          expires: new Date(0),
+        });
+      }
+    }
+
+    return response;
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }

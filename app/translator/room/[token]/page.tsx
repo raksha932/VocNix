@@ -84,7 +84,9 @@ export default function TranslatorRoomPage() {
     const service = new AudioService({
       onConnectionChange: (status) => setConnectionStatus(status),
       onParticipantCountChange: (count) => {
-        setListenerCount(Math.max(0, count));
+        if (count > 0) {
+          setListenerCount((prev) => Math.max(prev, count));
+        }
       },
       onAudioLevelChange: (level) => setAudioLevel(level),
       onError: (err) => setError(err.message),
