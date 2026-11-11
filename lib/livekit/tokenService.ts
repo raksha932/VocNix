@@ -11,6 +11,22 @@ function cleanEnv(val: string | undefined): string {
   return (val || '').trim().replace(/^["']|["']$/g, '').trim();
 }
 
+function isPlaceholder(val: string): boolean {
+  if (!val) return true;
+  const lower = val.toLowerCase();
+  return (
+    lower.includes('your-project') ||
+    lower.includes('your-audio-server') ||
+    lower.includes('your-api-key') ||
+    lower.includes('your-api-secret') ||
+    lower.includes('placeholder') ||
+    lower.includes('apixxxxx') ||
+    lower.includes('secretxxxxx') ||
+    lower.includes('example.com') ||
+    lower.endsWith('...')
+  );
+}
+
 export function getLiveKitConfig(): LiveKitConfig {
   let url = cleanEnv(process.env.LIVEKIT_URL || process.env.NEXT_PUBLIC_LIVEKIT_URL);
   const apiKey = cleanEnv(process.env.LIVEKIT_API_KEY);
@@ -24,8 +40,9 @@ export function getLiveKitConfig(): LiveKitConfig {
     url &&
     apiKey &&
     apiSecret &&
-    apiKey !== 'devkey-placeholder' &&
-    apiSecret !== 'secret-placeholder' &&
+    !isPlaceholder(url) &&
+    !isPlaceholder(apiKey) &&
+    !isPlaceholder(apiSecret) &&
     !url.includes('•') &&
     (url.startsWith('ws://') || url.startsWith('wss://'))
   );
@@ -45,9 +62,9 @@ export async function createTranslatorToken(params: {
 }): Promise<string> {
   const config = getLiveKitConfig();
 
-  if (!config.isConfigured && (!config.apiKey || !config.apiSecret)) {
+  if (!config.isConfigured) {
     throw new Error(
-      'Audio service credentials not configured. Please check your environment settings.'
+      'LiveKit audio server is not properly configured. Please enter real LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET from your LiveKit Cloud dashboard (not placeholders like your-project.livekit.cloud).'
     );
   }
 
@@ -74,9 +91,9 @@ export async function createAudienceToken(params: {
 }): Promise<string> {
   const config = getLiveKitConfig();
 
-  if (!config.isConfigured && (!config.apiKey || !config.apiSecret)) {
+  if (!config.isConfigured) {
     throw new Error(
-      'Audio service credentials not configured. Please check your environment settings.'
+      'LiveKit audio server is not properly configured. Please enter real LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET from your LiveKit Cloud dashboard (not placeholders like your-project.livekit.cloud).'
     );
   }
 
