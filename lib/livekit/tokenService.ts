@@ -8,7 +8,9 @@ export interface LiveKitConfig {
 }
 
 function cleanEnv(val: string | undefined): string {
-  return (val || '').trim().replace(/^["']|["']$/g, '').trim();
+  let cleaned = (val || '').trim().replace(/^["']|["']$/g, '').trim();
+  cleaned = cleaned.replace(/\/+$/, '');
+  return cleaned;
 }
 
 function isPlaceholder(val: string): boolean {
@@ -35,6 +37,7 @@ export function getLiveKitConfig(): LiveKitConfig {
   if (url && !url.startsWith('ws://') && !url.startsWith('wss://') && !url.includes('•')) {
     url = `wss://${url.replace(/^https?:\/\//, '')}`;
   }
+  url = url.replace(/\/+$/, '');
 
   const isConfigured = Boolean(
     url &&
