@@ -117,7 +117,10 @@ export default function AdminSignupPage() {
         router.push('/admin/login?registered=true');
       }, 1000);
     } catch (err: any) {
-      setErrorMessage(err.message || 'Network error occurred during registration.');
+      const msg = err?.message === 'fetch failed' || err?.message === 'Failed to fetch'
+        ? 'Unable to connect to the registration server. Please verify your connection or database URL.'
+        : (err?.message || 'Network error occurred during registration.');
+      setErrorMessage(msg);
       setLoading(false);
     }
   };

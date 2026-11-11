@@ -79,58 +79,61 @@ export async function POST(req: NextRequest) {
 
     let authUserId: string = randomUUID();
 
-    // 4. Supabase Auth Account Creation
+    // 4. Supabase Auth Account Creation (with network error resiliency)
     if (isSupabaseConfigured()) {
-      const admin = getSupabaseAdmin();
-      const client = getSupabaseClient();
+      try {
+        const admin = getSupabaseAdmin();
+        const client = getSupabaseClient();
 
-      if (admin) {
-        // Use admin client with auto-confirmed email for immediate login readiness
-        const { data: adminUserData, error: adminAuthErr } = await admin.auth.admin.createUser({
-          email: cleanEmail,
-          password,
-          email_confirm: true,
-          user_metadata: {
-            username: cleanUsername,
-            full_name: fullName?.trim() || cleanUsername,
-            role: 'admin',
-          },
-        });
-
-        if (adminAuthErr) {
-          if (adminAuthErr.message.toLowerCase().includes('already registered')) {
-            return NextResponse.json(
-              { success: false, error: 'An account with this email is already registered.' },
-              { status: 409 }
-            );
-          }
-          return NextResponse.json({ success: false, error: adminAuthErr.message }, { status: 400 });
-        }
-
-        if (adminUserData?.user) {
-          authUserId = adminUserData.user.id;
-        }
-      } else if (client) {
-        // Standard signup fallback
-        const { data: clientAuthData, error: clientAuthErr } = await client.auth.signUp({
-          email: cleanEmail,
-          password,
-          options: {
-            data: {
+        if (admin) {
+          // Use admin client with auto-confirmed email for immediate login readiness
+          const { data: adminUserData, error: adminAuthErr } = await admin.auth.admin.createUser({
+            email: cleanEmail,
+            password,
+            email_confirm: true,
+            user_metadata: {
               username: cleanUsername,
               full_name: fullName?.trim() || cleanUsername,
               role: 'admin',
             },
-          },
-        });
+          });
 
-        if (clientAuthErr) {
-          return NextResponse.json({ success: false, error: clientAuthErr.message }, { status: 400 });
-        }
+          if (adminAuthErr) {
+            if (adminAuthErr.message.toLowerCase().includes('already registered')) {
+              return NextResponse.json(
+                { success: false, error: 'An account with this email is already registered.' },
+                { status: 409 }
+              );
+            }
+            console.warn('[Signup] Supabase admin auth warning:', adminAuthErr.message);
+          } else if (adminUserData?.user) {
+            authUserId = adminUserData.user.id;
+          }
+        } else if (client) {
+          // Standard signup fallback
+          const { data: clientAuthData, error: clientAuthErr } = await client.auth.signUp({
+            email: cleanEmail,
+            password,
+            options: {
+              data: {
+                username: cleanUsername,
+                full_name: fullName?.trim() || cleanUsername,
+                role: 'admin',
+              },
+            },
+          });
 
-        if (clientAuthData?.user) {
-          authUserId = clientAuthData.user.id;
+          if (clientAuthErr) {
+            console.warn('[Signup] Supabase client auth warning:', clientAuthErr.message);
+          } else if (clientAuthData?.user) {
+            authUserId = clientAuthData.user.id;
+          }
         }
+      } catch (authErr: any) {
+        // Network-level error reaching Supabase (e.g. invalid URL, paused project, DNS failure)
+        console.warn(
+          `[Signup] Supabase Auth endpoint unreachable (${authErr?.message || authErr}). Falling back to repository profile storage.`
+        );
       }
     }
 

@@ -59,28 +59,32 @@ export async function POST(req: NextRequest) {
 
     let authUserId: string = randomUUID();
 
-    // 4. Create in Supabase Auth
+    // 4. Create in Supabase Auth (with network error resiliency)
     if (isSupabaseConfigured()) {
-      const admin = getSupabaseAdmin();
-      if (admin) {
-        const { data, error } = await admin.auth.admin.createUser({
-          email: cleanEmail,
-          password,
-          email_confirm: true,
-          user_metadata: {
-            username: cleanUsername,
-            full_name: fullName?.trim() || cleanUsername,
-            role: 'super_admin',
-          },
-        });
+      try {
+        const admin = getSupabaseAdmin();
+        if (admin) {
+          const { data, error } = await admin.auth.admin.createUser({
+            email: cleanEmail,
+            password,
+            email_confirm: true,
+            user_metadata: {
+              username: cleanUsername,
+              full_name: fullName?.trim() || cleanUsername,
+              role: 'super_admin',
+            },
+          });
 
-        if (error) {
-          return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+          if (error) {
+            console.warn('[Setup Super Admin] Supabase admin auth warning:', error.message);
+          } else if (data?.user) {
+            authUserId = data.user.id;
+          }
         }
-
-        if (data?.user) {
-          authUserId = data.user.id;
-        }
+      } catch (authErr: any) {
+        console.warn(
+          `[Setup Super Admin] Supabase Auth endpoint unreachable (${authErr?.message || authErr}). Falling back to repository profile storage.`
+        );
       }
     }
 

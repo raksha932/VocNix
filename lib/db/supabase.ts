@@ -56,14 +56,28 @@ function getSupabaseUrl(): string {
   return url;
 }
 
+function isPlaceholderValue(val: string): boolean {
+  if (!val) return true;
+  const lower = val.toLowerCase();
+  return (
+    lower.includes('your-project') ||
+    lower.includes('your-anon-key') ||
+    lower.includes('your-service-role-key') ||
+    lower.includes('placeholder') ||
+    lower.includes('example.com') ||
+    lower.endsWith('...')
+  );
+}
+
 export const isSupabaseConfigured = (): boolean => {
   const url = getSupabaseUrl();
   const anonKey = getSupabaseAnonKey();
   const serviceKey = getSupabaseServiceKey();
   return Boolean(
     url &&
-    url !== 'https://your-project.supabase.co' &&
-    ((anonKey && anonKey !== 'your-anon-key') || (serviceKey && serviceKey !== 'your-service-role-key'))
+    url.startsWith('https://') &&
+    !isPlaceholderValue(url) &&
+    ((anonKey && !isPlaceholderValue(anonKey)) || (serviceKey && !isPlaceholderValue(serviceKey)))
   );
 };
 
@@ -72,9 +86,10 @@ export const hasSupabaseAdminConfigured = (): boolean => {
   const serviceKey = getSupabaseServiceKey();
   return Boolean(
     url &&
-    url !== 'https://your-project.supabase.co' &&
+    url.startsWith('https://') &&
+    !isPlaceholderValue(url) &&
     serviceKey &&
-    serviceKey !== 'your-service-role-key'
+    !isPlaceholderValue(serviceKey)
   );
 };
 

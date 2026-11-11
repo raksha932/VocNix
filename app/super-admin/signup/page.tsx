@@ -78,7 +78,10 @@ export default function SuperAdminSignupPage() {
         router.push('/super-admin/login?registered=true');
       }, 1000);
     } catch (err: any) {
-      setErrorMessage(err.message || 'Network error communicating with server.');
+      const msg = err?.message === 'fetch failed' || err?.message === 'Failed to fetch'
+        ? 'Unable to connect to the registration server. Please verify your connection or database URL.'
+        : (err?.message || 'Network error communicating with server.');
+      setErrorMessage(msg);
       setLoading(false);
     }
   };
