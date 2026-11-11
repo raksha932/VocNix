@@ -55,6 +55,8 @@ export interface Organization {
   name: string;
   slug: string;
   plan_id?: string;
+  plan_slug?: string;
+  trial_ends_at?: string;
   status: OrgStatus;
   admin_name?: string;
   admin_email?: string;

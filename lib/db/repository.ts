@@ -339,21 +339,233 @@ if (process.env.NODE_ENV !== 'production') {
   global.__vocnix_store = store;
 }
 
+function isSchemaColumnError(err: any): boolean {
+  const msg = String(err?.message || err?.details || err?.hint || '').toLowerCase();
+  return (
+    msg.includes('column') ||
+    msg.includes('schema cache') ||
+    msg.includes('does not exist') ||
+    msg.includes('could not find')
+  );
+}
+
+function mapPlanIdentifier(rawPlanIdOrSlug?: string | null, plans?: Plan[]): Plan | undefined {
+  if (!rawPlanIdOrSlug || !plans || plans.length === 0) return undefined;
+  const key = rawPlanIdOrSlug.trim().toLowerCase();
+  if (key === 'plan-starter') return plans.find((p) => p.slug === 'free') || plans[0];
+  if (key === 'plan-single-event') return plans.find((p) => p.slug === 'pro') || plans[1];
+  if (key === 'plan-full-day') return plans.find((p) => p.slug === 'pro-plus') || plans[2];
+  return plans.find((p) => p.id === rawPlanIdOrSlug || p.slug === key);
+}
+
+async function fetchOrganizationAdminFromSupabase(
+  admin: NonNullable<ReturnType<typeof getSupabaseAdmin>>,
+  orgRow: any
+): Promise<Profile | null> {
+  try {
+    if (orgRow?.admin_user_id) {
+      const { data: prof } = await admin.from('profiles').select('*').eq('id', orgRow.admin_user_id).maybeSingle();
+      if (prof) return prof as Profile;
+    }
+
+    const { data: members } = await admin
+      .from('organization_members')
+      .select('profile_id, role')
+      .eq('organization_id', orgRow.id)
+      .in('role', ['admin', 'owner'])
+      .limit(1);
+
+    if (members && members.length > 0 && members[0].profile_id) {
+      const { data: prof } = await admin.from('profiles').select('*').eq('id', members[0].profile_id).maybeSingle();
+      if (prof) return prof as Profile;
+    }
+
+    const { data: profByOrg } = await admin
+      .from('profiles')
+      .select('*')
+      .eq('organization_id', orgRow.id)
+      .limit(1)
+      .maybeSingle();
+    if (profByOrg) return profByOrg as Profile;
+
+    if (orgRow?.admin_email) {
+      const { data: profByEmail } = await admin
+        .from('profiles')
+        .select('*')
+        .ilike('email', orgRow.admin_email.trim().toLowerCase())
+        .limit(1)
+        .maybeSingle();
+      if (profByEmail) return profByEmail as Profile;
+    }
+  } catch (err) {
+    console.warn('[Repository] fetchOrganizationAdminFromSupabase warning:', err);
+  }
+  return null;
+}
+
+async function linkOrganizationMemberInSupabase(
+  orgId: string,
+  profileId: string,
+  role: string = 'admin'
+): Promise<void> {
+  if (!isSupabaseConfigured()) return;
+  const admin = getSupabaseAdmin();
+  if (!admin) return;
+  try {
+    const { error } = await admin
+      .from('organization_members')
+      .upsert(
+        {
+          organization_id: orgId,
+          profile_id: profileId,
+          role,
+        },
+        { onConflict: 'organization_id,profile_id' }
+      );
+    if (error) {
+      console.warn('[Repository] linkOrganizationMemberInSupabase error:', error.message);
+    }
+  } catch (err) {
+    console.warn('[Repository] linkOrganizationMemberInSupabase warning:', err);
+  }
+}
+
+async function syncOrganizationAdminAccount(params: {
+  orgId: string;
+  orgName: string;
+  adminName?: string;
+  adminEmail: string;
+  contactNumber?: string;
+  existingAdminUserId?: string;
+}): Promise<Profile> {
+  const cleanEmail = params.adminEmail.trim().toLowerCase();
+  const initialPassword = 'Admin123!';
+  const resolvedFullName = params.adminName?.trim() || `${params.orgName} Admin`;
+  const cleanPhone = params.contactNumber?.trim() || undefined;
+
+  let adminProfile = await Repository.getProfileByEmail(cleanEmail);
+  const generatedUsername =
+    adminProfile?.username ||
+    (cleanEmail.split('@')[0].replace(/[^a-z0-9_]/gi, '') || 'admin').toLowerCase() +
+      `_${randomBytes(2).toString('hex')}`;
+
+  let adminId = adminProfile?.id || params.existingAdminUserId || randomUUID();
+
+  if (isSupabaseConfigured()) {
+    const admin = getSupabaseAdmin();
+    if (admin) {
+      try {
+        const { data: usersData } = await admin.auth.admin.listUsers();
+        const existingAuthUser = usersData?.users?.find(
+          (u) => (u.email || '').toLowerCase() === cleanEmail
+        );
+
+        if (existingAuthUser) {
+          adminId = existingAuthUser.id;
+          await admin.auth.admin.updateUserById(adminId, {
+            ...(adminProfile ? {} : { password: initialPassword }),
+            email_confirm: true,
+            user_metadata: {
+              ...(existingAuthUser.user_metadata || {}),
+              username: existingAuthUser.user_metadata?.username || generatedUsername,
+              full_name: resolvedFullName,
+              role: existingAuthUser.user_metadata?.role === 'super_admin' ? 'super_admin' : 'admin',
+              organization_id: params.orgId,
+              ...(cleanPhone !== undefined ? { phone: cleanPhone } : {}),
+            },
+          });
+        } else {
+          const { data: createdAuthUser, error: authError } = await admin.auth.admin.createUser({
+            id: adminId,
+            email: cleanEmail,
+            password: initialPassword,
+            email_confirm: true,
+            user_metadata: {
+              username: generatedUsername,
+              full_name: resolvedFullName,
+              role: 'admin',
+              organization_id: params.orgId,
+              ...(cleanPhone !== undefined ? { phone: cleanPhone } : {}),
+            },
+          });
+          if (!authError && createdAuthUser?.user) {
+            adminId = createdAuthUser.user.id;
+          }
+        }
+      } catch (authErr) {
+        console.warn('[Repository] Supabase Auth admin sync warning:', authErr);
+      }
+    }
+  }
+
+  adminProfile = await Repository.createProfile({
+    id: adminId,
+    username: generatedUsername,
+    email: cleanEmail,
+    role: adminProfile?.role === 'super_admin' ? 'super_admin' : 'admin',
+    full_name: params.adminName?.trim()
+      ? params.adminName.trim()
+      : adminProfile?.full_name || resolvedFullName,
+    organization_id: params.orgId,
+    phone: cleanPhone,
+    password: adminProfile ? undefined : initialPassword,
+  });
+
+  adminProfile.organization_id = params.orgId;
+  if (cleanPhone !== undefined) adminProfile.phone = cleanPhone;
+  store.profiles.set(adminProfile.id, adminProfile);
+  return adminProfile;
+}
+
 export const Repository = {
   // ORGANIZATIONS
   async getOrganization(orgId: string): Promise<Organization | null> {
     syncStoreFromDiskIfNeeded(store);
+    const existing = store.organizations.get(orgId);
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
       if (admin) {
-        const { data, error } = await admin.from('organizations').select('*').eq('id', orgId).single();
-        if (!error && data) {
-          store.organizations.set(data.id, data as Organization);
-          return data as Organization;
+        try {
+          const { data, error } = await admin.from('organizations').select('*').eq('id', orgId).single();
+          if (!error && data) {
+            const plans = await this.getPlans();
+            const resolvedPlan =
+              mapPlanIdentifier((data as any).plan_slug || data.plan_id || existing?.plan_id, plans) || plans[0];
+            let hydrated: Organization = {
+              ...(existing || {}),
+              ...(data as Organization),
+              plan_id: resolvedPlan.id,
+              plan_slug: (data as any).plan_slug || resolvedPlan.slug,
+              admin_name: (data as any).admin_name || existing?.admin_name,
+              admin_email: (data as any).admin_email || existing?.admin_email,
+              contact_number: (data as any).contact_number || existing?.contact_number,
+              admin_user_id: (data as any).admin_user_id || existing?.admin_user_id,
+              logo_url: (data as any).logo_url || existing?.logo_url,
+            };
+
+            if (!hydrated.admin_email || !hydrated.admin_user_id || !hydrated.admin_name) {
+              const adminProf = await fetchOrganizationAdminFromSupabase(admin, hydrated);
+              if (adminProf) {
+                store.profiles.set(adminProf.id, adminProf);
+                hydrated = {
+                  ...hydrated,
+                  admin_user_id: hydrated.admin_user_id || adminProf.id,
+                  admin_name: hydrated.admin_name || adminProf.full_name,
+                  admin_email: hydrated.admin_email || adminProf.email,
+                  contact_number: hydrated.contact_number || adminProf.phone,
+                };
+              }
+            }
+
+            store.organizations.set(hydrated.id, hydrated);
+            return hydrated;
+          }
+        } catch (err) {
+          console.warn('[Repository] getOrganization supabase warning:', err);
         }
       }
     }
-    return store.organizations.get(orgId) || null;
+    return existing || null;
   },
 
   async getDefaultOrganization(): Promise<Organization | null> {
@@ -1628,25 +1840,9 @@ export const Repository = {
     plan_id: string;
   }>): Promise<Organization | null> {
     const now = new Date().toISOString();
-    if (isSupabaseConfigured()) {
-      const admin = getSupabaseAdmin();
-      if (admin) {
-        const updatePayload: any = { updated_at: now };
-        if (updates.name !== undefined) updatePayload.name = updates.name.trim();
-        if (updates.slug !== undefined) updatePayload.slug = updates.slug.trim().toLowerCase().replace(/\s+/g, '-');
-        if (updates.logo_url !== undefined) updatePayload.logo_url = updates.logo_url.trim();
-        if (updates.status !== undefined) updatePayload.status = updates.status;
-        const { data, error } = await admin.from('organizations').update(updatePayload).eq('id', orgId).select('*').single();
-        if (!error && data) {
-          const merged = { ...store.organizations.get(orgId), ...data };
-          store.organizations.set(orgId, merged as Organization);
-          persistStoreToDisk(store);
-          return merged as Organization;
-        }
-      }
-    }
-    const org = store.organizations.get(orgId) || await this.getOrganization(orgId);
+    const org = store.organizations.get(orgId) || (await this.getOrganization(orgId));
     if (!org) return null;
+
     if (updates.name !== undefined) org.name = updates.name.trim();
     if (updates.slug !== undefined) org.slug = updates.slug.trim().toLowerCase().replace(/\s+/g, '-');
     if (updates.admin_name !== undefined) org.admin_name = updates.admin_name.trim();
@@ -1654,21 +1850,93 @@ export const Repository = {
     if (updates.contact_number !== undefined) org.contact_number = updates.contact_number.trim();
     if (updates.logo_url !== undefined) org.logo_url = updates.logo_url.trim();
     if (updates.status !== undefined) org.status = updates.status;
-    if (updates.plan_id !== undefined) org.plan_id = updates.plan_id;
-    org.updated_at = now;
-    store.organizations.set(orgId, org);
 
-    // Synchronize associated Admin Profile if present
-    const adminUserId = org.admin_user_id;
-    if (adminUserId && store.profiles.has(adminUserId)) {
-      const prof = store.profiles.get(adminUserId)!;
-      if (updates.admin_email) prof.email = updates.admin_email.trim().toLowerCase();
+    if (updates.plan_id !== undefined) {
+      const plans = await this.getPlans();
+      const matchedPlan = mapPlanIdentifier(updates.plan_id, plans);
+      org.plan_id = matchedPlan?.id || updates.plan_id;
+      org.plan_slug = matchedPlan?.slug || org.plan_slug;
+    }
+    org.updated_at = now;
+
+    // Synchronize or create associated Admin Profile & organization_members link
+    const targetAdminEmail = (updates.admin_email !== undefined ? updates.admin_email : org.admin_email || '').trim().toLowerCase();
+    if (targetAdminEmail) {
+      const syncedAdmin = await syncOrganizationAdminAccount({
+        orgId: org.id,
+        orgName: org.name,
+        adminName: updates.admin_name !== undefined ? updates.admin_name : org.admin_name,
+        adminEmail: targetAdminEmail,
+        contactNumber: updates.contact_number !== undefined ? updates.contact_number : org.contact_number,
+        existingAdminUserId: org.admin_user_id,
+      });
+      org.admin_user_id = syncedAdmin.id;
+      if (!org.admin_name && syncedAdmin.full_name) org.admin_name = syncedAdmin.full_name;
+      org.admin_email = syncedAdmin.email;
+    } else if (org.admin_user_id && store.profiles.has(org.admin_user_id)) {
+      const prof = store.profiles.get(org.admin_user_id)!;
       if (updates.admin_name) prof.full_name = updates.admin_name.trim();
       if (updates.contact_number !== undefined) prof.phone = updates.contact_number.trim();
       prof.updated_at = now;
-      store.profiles.set(adminUserId, prof);
+      store.profiles.set(org.admin_user_id, prof);
     }
 
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const basePayload: any = {
+          updated_at: now,
+          name: org.name,
+          slug: org.slug,
+          status: org.status,
+          ...(org.logo_url !== undefined ? { logo_url: org.logo_url } : {}),
+        };
+        const fullPayload: any = {
+          ...basePayload,
+          ...(org.admin_name !== undefined ? { admin_name: org.admin_name } : {}),
+          ...(org.admin_email !== undefined ? { admin_email: org.admin_email } : {}),
+          ...(org.contact_number !== undefined ? { contact_number: org.contact_number } : {}),
+          ...(org.admin_user_id !== undefined ? { admin_user_id: org.admin_user_id } : {}),
+          ...(org.plan_slug !== undefined ? { plan_slug: org.plan_slug } : {}),
+        };
+
+        let { data, error } = await admin
+          .from('organizations')
+          .update(fullPayload)
+          .eq('id', orgId)
+          .select('*')
+          .single();
+
+        if (error && isSchemaColumnError(error)) {
+          console.warn('[Repository] updateOrganization falling back to base columns (run migration 005):', error.message);
+          const fallbackRes = await admin
+            .from('organizations')
+            .update(basePayload)
+            .eq('id', orgId)
+            .select('*')
+            .single();
+          data = fallbackRes.data;
+          error = fallbackRes.error;
+        }
+
+        if (!error && data) {
+          Object.assign(org, data, {
+            plan_id: org.plan_id,
+            plan_slug: (data as any).plan_slug || org.plan_slug,
+            admin_name: (data as any).admin_name || org.admin_name,
+            admin_email: (data as any).admin_email || org.admin_email,
+            contact_number: (data as any).contact_number || org.contact_number,
+            admin_user_id: (data as any).admin_user_id || org.admin_user_id,
+          });
+        }
+
+        if (org.admin_user_id) {
+          await linkOrganizationMemberInSupabase(org.id, org.admin_user_id, 'admin');
+        }
+      }
+    }
+
+    store.organizations.set(orgId, org);
     persistStoreToDisk(store);
     await this.logActivity(orgId, 'ORGANIZATION_UPDATED', `Organization details updated to "${org.name}"`);
     return org;
@@ -2172,10 +2440,11 @@ export const Repository = {
   },
 
   async getOrganizationPlan(organizationId: string): Promise<Plan> {
-    const org = store.organizations.get(organizationId) || (await this.getDefaultOrganization());
+    const org = (await this.getOrganization(organizationId)) || (await this.getDefaultOrganization());
     const plans = await this.getPlans();
-    if (org?.plan_id) {
-      const plan = await this.getPlanById(org.plan_id);
+    const identifier = org?.plan_slug || org?.plan_id;
+    if (identifier) {
+      const plan = await this.getPlanById(identifier);
       if (plan) return plan;
     }
     return plans[0];
@@ -2186,12 +2455,32 @@ export const Repository = {
     const targetPlan = plans.find(p => p.slug === planSlug || p.id === planSlug);
     if (!targetPlan) throw new Error('Selected plan not found');
 
-    const org = store.organizations.get(organizationId) || (await this.getDefaultOrganization());
+    const org = (await this.getOrganization(organizationId)) || (await this.getDefaultOrganization());
     if (!org) throw new Error('Organization not found');
 
+    const now = new Date().toISOString();
     org.plan_id = targetPlan.id;
-    org.updated_at = new Date().toISOString();
+    org.plan_slug = targetPlan.slug;
+    org.updated_at = now;
     store.organizations.set(organizationId, org);
+    persistStoreToDisk(store);
+
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        try {
+          const { error } = await admin
+            .from('organizations')
+            .update({ plan_slug: targetPlan.slug, updated_at: now })
+            .eq('id', organizationId);
+          if (error && !isSchemaColumnError(error)) {
+            console.warn('[Repository] upgradeSubscription supabase error:', error.message);
+          }
+        } catch (err) {
+          console.warn('[Repository] upgradeSubscription supabase catch:', err);
+        }
+      }
+    }
 
     // Create billing invoice record in INR
     const invoice = {
@@ -2237,24 +2526,45 @@ export const Repository = {
     status?: OrgStatus;
     plan_id?: string;
   }): Promise<{ organization: Organization; adminUser?: Profile | null }> {
+    syncStoreFromDiskIfNeeded(store);
     const rawName = params.name ? params.name.trim() : '';
     if (!rawName) {
       throw new Error('Organization name is required.');
     }
 
-    // 1. Check duplicate organization name
+    // 1. Validate email
+    const cleanEmail = params.admin_email ? params.admin_email.trim().toLowerCase() : '';
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+      throw new Error('A valid administrator email address is required.');
+    }
+
+    // Ensure Supabase organizations cache is synced before duplicate checks
+    let supabaseSlugs: string[] = [];
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        try {
+          const { data: existingOrgs } = await admin.from('organizations').select('*');
+          if (existingOrgs) {
+            supabaseSlugs = existingOrgs.map((o: any) => o.slug).filter(Boolean);
+            for (const o of existingOrgs) {
+              const prev = store.organizations.get(o.id);
+              store.organizations.set(o.id, { ...(prev || {}), ...o } as Organization);
+            }
+          }
+        } catch (err) {
+          console.warn('[Repository] createOrganization pre-sync warning:', err);
+        }
+      }
+    }
+
+    // 2. Check duplicate organization name
     const existingOrgName = Array.from(store.organizations.values()).find(
       (o) => o.name.trim().toLowerCase() === rawName.toLowerCase()
     );
     if (existingOrgName) {
       throw new Error(`An organization with the name "${rawName}" already exists.`);
-    }
-
-    // 2. Validate email
-    const cleanEmail = params.admin_email ? params.admin_email.trim().toLowerCase() : '';
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!cleanEmail || !emailRegex.test(cleanEmail)) {
-      throw new Error('A valid administrator email address is required.');
     }
 
     // 3. Check duplicate admin email across other organizations
@@ -2274,101 +2584,39 @@ export const Repository = {
     ).toLowerCase();
     if (!slug) slug = `org-${Date.now().toString().slice(-6)}`;
 
-    // Ensure slug uniqueness
+    // Ensure slug uniqueness across store + Supabase
+    const usedSlugs = new Set([
+      ...Array.from(store.organizations.values()).map((o) => o.slug),
+      ...supabaseSlugs,
+    ]);
     let finalSlug = slug;
     let counter = 1;
-    while (Array.from(store.organizations.values()).some((o) => o.slug === finalSlug)) {
+    while (usedSlugs.has(finalSlug)) {
       finalSlug = `${slug}-${counter++}`;
     }
 
     const orgId = randomUUID();
     const now = new Date().toISOString();
+    const defaultTrialEnd = new Date(Date.now() + 90 * 86400000).toISOString();
     const plans = await this.getPlans();
-    const plan = params.plan_id
-      ? plans.find((p) => p.id === params.plan_id || p.slug === params.plan_id)
-      : plans[0];
+    const plan = mapPlanIdentifier(params.plan_id, plans) || plans[0];
 
-    // 4. Create or link administrator account
-    let adminProfile = await this.getProfileByEmail(cleanEmail);
-    if (!adminProfile) {
-      const generatedUsername = (
-        cleanEmail.split('@')[0].replace(/[^a-z0-9_]/gi, '') || 'admin'
-      ).toLowerCase() + `_${randomBytes(2).toString('hex')}`;
-
-      let adminId: string = randomUUID();
-      const initialPassword = 'Admin123!';
-
-      if (isSupabaseConfigured()) {
-        const admin = getSupabaseAdmin();
-        if (admin) {
-          try {
-            // Check if user already exists in Supabase Auth
-            const { data: usersData } = await admin.auth.admin.listUsers();
-            const existingAuthUser = usersData?.users?.find(
-              (u) => (u.email || '').toLowerCase() === cleanEmail
-            );
-
-            if (existingAuthUser) {
-              adminId = existingAuthUser.id;
-              await admin.auth.admin.updateUserById(adminId, {
-                password: initialPassword,
-                email_confirm: true,
-                user_metadata: {
-                  username: generatedUsername,
-                  full_name: params.admin_name?.trim() || `${rawName} Admin`,
-                  role: 'admin',
-                },
-              });
-            } else {
-              const { data: createdAuthUser, error: authError } = await admin.auth.admin.createUser({
-                id: adminId,
-                email: cleanEmail,
-                password: initialPassword,
-                email_confirm: true,
-                user_metadata: {
-                  username: generatedUsername,
-                  full_name: params.admin_name?.trim() || `${rawName} Admin`,
-                  role: 'admin',
-                },
-              });
-              if (!authError && createdAuthUser?.user) {
-                adminId = createdAuthUser.user.id;
-              }
-            }
-          } catch (authErr) {
-            console.warn('[Repository] Supabase Auth createUser warning:', authErr);
-          }
-        }
-      }
-
-      adminProfile = await this.createProfile({
-        id: adminId,
-        username: generatedUsername,
-        email: cleanEmail,
-        role: 'admin',
-        full_name: params.admin_name?.trim() || `${rawName} Admin`,
-        password: initialPassword,
-      });
-      adminProfile.organization_id = orgId;
-      adminProfile.phone = params.contact_number?.trim() || undefined;
-      store.profiles.set(adminProfile.id, adminProfile);
-    } else {
-      adminProfile.organization_id = orgId;
-      adminProfile.role = 'admin';
-      if (params.admin_name?.trim()) {
-        adminProfile.full_name = params.admin_name.trim();
-      }
-      if (params.contact_number?.trim()) {
-        adminProfile.phone = params.contact_number.trim();
-      }
-      store.profiles.set(adminProfile.id, adminProfile);
-    }
+    // 4. Create or link administrator account (Supabase Auth + profiles + store)
+    const adminProfile = await syncOrganizationAdminAccount({
+      orgId,
+      orgName: rawName,
+      adminName: params.admin_name,
+      adminEmail: cleanEmail,
+      contactNumber: params.contact_number,
+    });
 
     const newOrg: Organization = {
       id: orgId,
       name: rawName,
       slug: finalSlug,
-      plan_id: plan?.id || 'plan-starter',
+      plan_id: plan?.id || 'plan-free',
+      plan_slug: plan?.slug || 'free',
+      trial_ends_at: defaultTrialEnd,
       status: params.status || 'active',
       admin_name: params.admin_name?.trim() || adminProfile.full_name || `${rawName} Admin`,
       admin_email: cleanEmail,
@@ -2383,29 +2631,76 @@ export const Repository = {
       const admin = getSupabaseAdmin();
       if (admin) {
         try {
-          const { data, error } = await admin
+          const baseInsert = {
+            id: newOrg.id,
+            name: newOrg.name,
+            slug: newOrg.slug,
+            status: newOrg.status,
+            logo_url: newOrg.logo_url,
+            created_at: newOrg.created_at,
+            updated_at: newOrg.updated_at,
+          };
+          const fullInsert = {
+            ...baseInsert,
+            admin_name: newOrg.admin_name,
+            admin_email: newOrg.admin_email,
+            contact_number: newOrg.contact_number,
+            admin_user_id: newOrg.admin_user_id,
+            plan_slug: newOrg.plan_slug,
+            trial_ends_at: newOrg.trial_ends_at,
+          };
+
+          let { data, error } = await admin
             .from('organizations')
-            .insert({
-              id: newOrg.id,
-              name: newOrg.name,
-              slug: newOrg.slug,
-              status: newOrg.status,
-              logo_url: newOrg.logo_url,
-              created_at: newOrg.created_at,
-              updated_at: newOrg.updated_at,
-            })
+            .insert(fullInsert)
             .select('*')
             .single();
 
+          if (error && isSchemaColumnError(error)) {
+            console.warn('[Repository] createOrganization falling back to base columns (run migration 005):', error.message);
+            const fallbackRes = await admin
+              .from('organizations')
+              .insert(baseInsert)
+              .select('*')
+              .single();
+            data = fallbackRes.data;
+            error = fallbackRes.error;
+          }
+
           if (!error && data) {
-            store.organizations.set(data.id, { ...newOrg, ...data, plan_id: newOrg.plan_id, logo_url: newOrg.logo_url || data.logo_url });
+            // Link admin in organization_members & ensure profile.organization_id is synced
+            await linkOrganizationMemberInSupabase(data.id, adminProfile.id, 'admin');
+            await admin
+              .from('profiles')
+              .update({
+                organization_id: data.id,
+                ...(newOrg.contact_number ? { phone: newOrg.contact_number } : {}),
+                updated_at: now,
+              })
+              .eq('id', adminProfile.id);
+
+            const hydratedOrg: Organization = {
+              ...newOrg,
+              ...data,
+              plan_id: newOrg.plan_id,
+              plan_slug: (data as any).plan_slug || newOrg.plan_slug,
+              trial_ends_at: (data as any).trial_ends_at || newOrg.trial_ends_at,
+              admin_name: (data as any).admin_name || newOrg.admin_name,
+              admin_email: (data as any).admin_email || newOrg.admin_email,
+              contact_number: (data as any).contact_number || newOrg.contact_number,
+              admin_user_id: (data as any).admin_user_id || newOrg.admin_user_id,
+              logo_url: newOrg.logo_url || data.logo_url,
+            };
+            store.organizations.set(data.id, hydratedOrg);
             persistStoreToDisk(store);
             await this.logActivity(
               data.id,
               'ORGANIZATION_CREATED',
               `Super Admin created organization "${data.name}" with administrator ${cleanEmail}`
             );
-            return { organization: store.organizations.get(data.id)!, adminUser: adminProfile };
+            return { organization: hydratedOrg, adminUser: adminProfile };
+          } else if (error) {
+            console.warn('[Repository] createOrganization Supabase insert error:', error.message);
           }
         } catch (err: any) {
           console.warn('[Repository] createOrganization Supabase catch:', err.message);
@@ -2424,26 +2719,10 @@ export const Repository = {
   },
 
   async getOrganizationForAdmin(adminUserId: string, adminEmail: string): Promise<Organization | null> {
+    syncStoreFromDiskIfNeeded(store);
     const cleanEmail = adminEmail ? adminEmail.trim().toLowerCase() : '';
-    // 1. Check in-memory store
-    for (const org of store.organizations.values()) {
-      if (
-        (adminUserId && org.admin_user_id === adminUserId) ||
-        (cleanEmail && org.admin_email?.toLowerCase() === cleanEmail)
-      ) {
-        return org;
-      }
-    }
 
-    // 2. Check profile organization_id link
-    if (adminUserId && store.profiles.has(adminUserId)) {
-      const profile = store.profiles.get(adminUserId);
-      if (profile?.organization_id && store.organizations.has(profile.organization_id)) {
-        return store.organizations.get(profile.organization_id)!;
-      }
-    }
-
-    // 3. Check Supabase if configured
+    // 1. Check Supabase first so serverless instances always get fresh persisted tenant mapping
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
       if (admin) {
@@ -2454,7 +2733,7 @@ export const Repository = {
               .select('*')
               .eq('admin_user_id', adminUserId)
               .maybeSingle();
-            if (data) return data as Organization;
+            if (data) return (await this.getOrganization(data.id)) || (data as Organization);
           }
           if (cleanEmail) {
             const { data } = await admin
@@ -2462,7 +2741,28 @@ export const Repository = {
               .select('*')
               .ilike('admin_email', cleanEmail)
               .maybeSingle();
-            if (data) return data as Organization;
+            if (data) return (await this.getOrganization(data.id)) || (data as Organization);
+          }
+          if (adminUserId) {
+            const { data: member } = await admin
+              .from('organization_members')
+              .select('organization_id')
+              .eq('profile_id', adminUserId)
+              .limit(1)
+              .maybeSingle();
+            if (member?.organization_id) {
+              const org = await this.getOrganization(member.organization_id);
+              if (org) return org;
+            }
+            const { data: prof } = await admin
+              .from('profiles')
+              .select('organization_id')
+              .eq('id', adminUserId)
+              .maybeSingle();
+            if (prof?.organization_id) {
+              const org = await this.getOrganization(prof.organization_id);
+              if (org) return org;
+            }
           }
         } catch (err) {
           console.warn('[Repository] getOrganizationForAdmin supabase error:', err);
@@ -2470,11 +2770,30 @@ export const Repository = {
       }
     }
 
+    // 2. Check in-memory store
+    for (const org of store.organizations.values()) {
+      if (
+        (adminUserId && org.admin_user_id === adminUserId) ||
+        (cleanEmail && org.admin_email?.toLowerCase() === cleanEmail)
+      ) {
+        return org;
+      }
+    }
+
+    // 3. Check profile organization_id link
+    if (adminUserId && store.profiles.has(adminUserId)) {
+      const profile = store.profiles.get(adminUserId);
+      if (profile?.organization_id && store.organizations.has(profile.organization_id)) {
+        return store.organizations.get(profile.organization_id)!;
+      }
+    }
+
     return null;
   },
 
   async getOrganizationAdmin(orgId: string): Promise<Profile | null> {
-    const org = store.organizations.get(orgId);
+    syncStoreFromDiskIfNeeded(store);
+    const org = (await this.getOrganization(orgId)) || store.organizations.get(orgId);
     if (!org) return null;
 
     if (org.admin_user_id && store.profiles.has(org.admin_user_id)) {
@@ -2487,6 +2806,32 @@ export const Repository = {
     }
     for (const p of store.profiles.values()) {
       if (p.organization_id === orgId && p.role === 'admin') return p;
+    }
+
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        const remoteProf = await fetchOrganizationAdminFromSupabase(admin, org);
+        if (remoteProf) {
+          store.profiles.set(remoteProf.id, remoteProf);
+          return remoteProf;
+        }
+      }
+    }
+
+    if (org.admin_email) {
+      return {
+        id: org.admin_user_id || org.id,
+        username: org.admin_email.split('@')[0],
+        email: org.admin_email,
+        full_name: org.admin_name || `${org.name} Admin`,
+        role: 'admin',
+        organization_id: org.id,
+        phone: org.contact_number,
+        status: 'active',
+        created_at: org.created_at,
+        updated_at: org.updated_at,
+      };
     }
 
     return null;
@@ -2511,14 +2856,62 @@ export const Repository = {
     } | null;
   }>> {
     syncStoreFromDiskIfNeeded(store);
+    const plans = await this.getPlans();
+
+    const adminMemberByOrgId = new Map<string, string>();
+    const remoteEventIdsByOrg = new Map<string, Set<string>>();
+    const remoteUsageByOrg = new Map<string, number>();
+
     if (isSupabaseConfigured()) {
       const admin = getSupabaseAdmin();
       if (admin) {
         try {
-          const { data, error } = await admin.from('organizations').select('*').order('created_at', { ascending: false });
-          if (!error && data) {
-            // Remove any organization in memory store that was deleted in Supabase
-            const dbIds = new Set(data.map((o) => o.id));
+          const [orgsRes, membersRes, profilesRes, eventsRes, usageRes] = await Promise.allSettled([
+            admin.from('organizations').select('*').order('created_at', { ascending: false }),
+            admin.from('organization_members').select('organization_id, profile_id, role').in('role', ['admin', 'owner']),
+            admin.from('profiles').select('*'),
+            admin.from('events').select('id, organization_id'),
+            admin.from('usage_records').select('organization_id, minutes_used'),
+          ]);
+
+          if (profilesRes.status === 'fulfilled' && !profilesRes.value.error && profilesRes.value.data) {
+            for (const p of profilesRes.value.data) {
+              const prev = store.profiles.get(p.id);
+              store.profiles.set(p.id, { ...(prev || {}), ...p } as Profile);
+            }
+          }
+
+          if (membersRes.status === 'fulfilled' && !membersRes.value.error && membersRes.value.data) {
+            for (const m of membersRes.value.data) {
+              if (m.organization_id && m.profile_id && !adminMemberByOrgId.has(m.organization_id)) {
+                adminMemberByOrgId.set(m.organization_id, m.profile_id);
+              }
+            }
+          }
+
+          if (eventsRes.status === 'fulfilled' && !eventsRes.value.error && eventsRes.value.data) {
+            for (const ev of eventsRes.value.data) {
+              if (!ev.organization_id) continue;
+              if (!remoteEventIdsByOrg.has(ev.organization_id)) {
+                remoteEventIdsByOrg.set(ev.organization_id, new Set());
+              }
+              remoteEventIdsByOrg.get(ev.organization_id)!.add(ev.id);
+            }
+          }
+
+          if (usageRes.status === 'fulfilled' && !usageRes.value.error && usageRes.value.data) {
+            for (const u of usageRes.value.data) {
+              if (!u.organization_id) continue;
+              remoteUsageByOrg.set(
+                u.organization_id,
+                (remoteUsageByOrg.get(u.organization_id) || 0) + Number(u.minutes_used || 0)
+              );
+            }
+          }
+
+          if (orgsRes.status === 'fulfilled' && !orgsRes.value.error && orgsRes.value.data) {
+            const data = orgsRes.value.data;
+            const dbIds = new Set(data.map((o: any) => o.id));
             for (const [id] of Array.from(store.organizations.entries())) {
               if (!dbIds.has(id)) {
                 store.organizations.delete(id);
@@ -2526,14 +2919,19 @@ export const Repository = {
             }
             for (const o of data) {
               const existing = store.organizations.get(o.id);
+              const resolvedPlan =
+                mapPlanIdentifier((o as any).plan_slug || o.plan_id || existing?.plan_id, plans) || plans[0];
               store.organizations.set(o.id, {
+                ...(existing || {}),
                 ...o,
-                plan_id: existing?.plan_id || o.plan_id || 'plan-starter',
-                admin_name: existing?.admin_name || o.admin_name,
-                admin_email: existing?.admin_email || o.admin_email,
-                contact_number: existing?.contact_number || o.contact_number,
-                logo_url: existing?.logo_url || o.logo_url,
-                admin_user_id: existing?.admin_user_id || o.admin_user_id,
+                plan_id: resolvedPlan.id,
+                plan_slug: (o as any).plan_slug || resolvedPlan.slug,
+                admin_name: (o as any).admin_name || existing?.admin_name,
+                admin_email: (o as any).admin_email || existing?.admin_email,
+                contact_number: (o as any).contact_number || existing?.contact_number,
+                logo_url: (o as any).logo_url || existing?.logo_url,
+                admin_user_id: (o as any).admin_user_id || existing?.admin_user_id,
+                trial_ends_at: (o as any).trial_ends_at || existing?.trial_ends_at,
               } as Organization);
             }
           }
@@ -2544,36 +2942,68 @@ export const Repository = {
     }
 
     const orgs = Array.from(store.organizations.values());
-    const plans = await this.getPlans();
 
     return orgs.map(org => {
-      const plan = plans.find(p => p.id === org.plan_id || p.slug === org.plan_id) || plans[0];
-      const orgEvents = Array.from(store.events.values()).filter(e => e.organization_id === org.id);
-      const orgUsage = Array.from(store.usageRecords.values())
+      const plan = mapPlanIdentifier(org.plan_slug || org.plan_id, plans) || plans[0];
+      const eventIds = new Set(remoteEventIdsByOrg.get(org.id) || []);
+      for (const e of store.events.values()) {
+        if (e.organization_id === org.id) eventIds.add(e.id);
+      }
+
+      const localUsage = Array.from(store.usageRecords.values())
         .filter(u => u.organization_id === org.id)
         .reduce((sum, u) => sum + Number(u.minutes_used), 0);
+      const orgUsage = Math.max(localUsage, remoteUsageByOrg.get(org.id) || 0);
 
-      // Find associated admin profile
+      // Find associated admin profile across direct link, organization_members, email, and organization_id
       let adminUser: Profile | null = null;
+      const memberProfileId = adminMemberByOrgId.get(org.id);
+
       if (org.admin_user_id && store.profiles.has(org.admin_user_id)) {
         adminUser = store.profiles.get(org.admin_user_id)!;
+      } else if (memberProfileId && store.profiles.has(memberProfileId)) {
+        adminUser = store.profiles.get(memberProfileId)!;
       } else if (org.admin_email) {
         for (const p of store.profiles.values()) {
-          if (p.email.toLowerCase() === org.admin_email.toLowerCase()) {
+          if (p.email?.toLowerCase() === org.admin_email.toLowerCase()) {
+            adminUser = p;
+            break;
+          }
+        }
+      } else {
+        for (const p of store.profiles.values()) {
+          if (p.organization_id === org.id && p.role === 'admin') {
             adminUser = p;
             break;
           }
         }
       }
 
-      const hasAdmin = Boolean(adminUser || org.admin_email);
+      const resolvedAdminName = org.admin_name || adminUser?.full_name || undefined;
+      const resolvedAdminEmail = org.admin_email || adminUser?.email || undefined;
+      const resolvedContact = org.contact_number || adminUser?.phone || undefined;
+      const resolvedAdminUserId = org.admin_user_id || adminUser?.id || undefined;
+      const hasAdmin = Boolean(adminUser || resolvedAdminEmail || resolvedAdminUserId);
+
+      // Keep store hydrated so subsequent single-org lookups (e.g., impersonate) succeed immediately
+      if (resolvedAdminEmail && (!org.admin_email || !org.admin_user_id)) {
+        store.organizations.set(org.id, {
+          ...org,
+          admin_name: resolvedAdminName,
+          admin_email: resolvedAdminEmail,
+          contact_number: resolvedContact,
+          admin_user_id: resolvedAdminUserId,
+        });
+      }
 
       return {
         ...org,
-        admin_name: org.admin_name || adminUser?.full_name || undefined,
-        admin_email: org.admin_email || adminUser?.email || undefined,
-        contact_number: org.contact_number || adminUser?.phone || undefined,
-        admin_user_id: org.admin_user_id || adminUser?.id || undefined,
+        plan_id: plan.id,
+        plan_slug: plan.slug,
+        admin_name: resolvedAdminName,
+        admin_email: resolvedAdminEmail,
+        contact_number: resolvedContact,
+        admin_user_id: resolvedAdminUserId,
         hasAdmin,
         adminUser: adminUser
           ? {
@@ -2585,45 +3015,79 @@ export const Repository = {
               phone: adminUser.phone,
               status: adminUser.status || 'active',
             }
+          : resolvedAdminEmail
+          ? {
+              id: resolvedAdminUserId || org.id,
+              username: resolvedAdminEmail.split('@')[0],
+              email: resolvedAdminEmail,
+              full_name: resolvedAdminName,
+              role: 'admin' as UserRole,
+              phone: resolvedContact,
+              status: 'active',
+            }
           : null,
-        planName: plan?.name || 'Starter Pass',
+        planName: plan?.name || 'Free Plan',
         planPrice: (plan?.price_cents || 0) / 100,
-        totalEvents: orgEvents.length,
+        totalEvents: eventIds.size,
         usedMinutes: Number(orgUsage.toFixed(2)),
-        quotaMinutes: plan?.monthly_minute_quota || 60,
-        trialEndsAt: (org as any).trial_ends_at || new Date(Date.now() + 30 * 86400000).toISOString(),
+        quotaMinutes: plan?.monthly_minute_quota || 120,
+        trialEndsAt: org.trial_ends_at || new Date(Date.now() + 30 * 86400000).toISOString(),
       };
     });
   },
 
   async suspendOrganization(orgId: string): Promise<Organization | null> {
-    const org = store.organizations.get(orgId);
+    const org = (await this.getOrganization(orgId)) || store.organizations.get(orgId);
     if (!org) return null;
+    const now = new Date().toISOString();
     org.status = 'suspended';
-    org.updated_at = new Date().toISOString();
+    org.updated_at = now;
     store.organizations.set(orgId, org);
+    persistStoreToDisk(store);
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        await admin.from('organizations').update({ status: 'suspended', updated_at: now }).eq('id', orgId);
+      }
+    }
     await this.logActivity(orgId, 'ORG_SUSPENDED', `Super Admin suspended organization "${org.name}"`);
     return org;
   },
 
   async reactivateOrganization(orgId: string): Promise<Organization | null> {
-    const org = store.organizations.get(orgId);
+    const org = (await this.getOrganization(orgId)) || store.organizations.get(orgId);
     if (!org) return null;
+    const now = new Date().toISOString();
     org.status = 'active';
-    org.updated_at = new Date().toISOString();
+    org.updated_at = now;
     store.organizations.set(orgId, org);
+    persistStoreToDisk(store);
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        await admin.from('organizations').update({ status: 'active', updated_at: now }).eq('id', orgId);
+      }
+    }
     await this.logActivity(orgId, 'ORG_REACTIVATED', `Super Admin reactivated organization "${org.name}"`);
     return org;
   },
 
   async extendTrial(orgId: string, days = 30): Promise<{ org: Organization; newTrialEnd: string } | null> {
-    const org = store.organizations.get(orgId);
+    const org = (await this.getOrganization(orgId)) || store.organizations.get(orgId);
     if (!org) return null;
-    const currentEnd = (org as any).trial_ends_at ? new Date((org as any).trial_ends_at) : new Date();
+    const now = new Date().toISOString();
+    const currentEnd = org.trial_ends_at ? new Date(org.trial_ends_at) : new Date();
     const newEnd = new Date(currentEnd.getTime() + days * 86400000).toISOString();
-    (org as any).trial_ends_at = newEnd;
-    org.updated_at = new Date().toISOString();
+    org.trial_ends_at = newEnd;
+    org.updated_at = now;
     store.organizations.set(orgId, org);
+    persistStoreToDisk(store);
+    if (isSupabaseConfigured()) {
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        await admin.from('organizations').update({ trial_ends_at: newEnd, updated_at: now }).eq('id', orgId);
+      }
+    }
     await this.logActivity(orgId, 'TRIAL_EXTENDED', `Super Admin extended trial for "${org.name}" by ${days} days`);
     return { org, newTrialEnd: newEnd };
   },
@@ -2876,6 +3340,9 @@ export const Repository = {
     role?: UserRole;
     full_name?: string;
     avatar_url?: string;
+    organization_id?: string;
+    phone?: string;
+    status?: 'active' | 'inactive' | 'suspended' | 'disabled';
     password?: string;
   }): Promise<Profile> {
     const now = new Date().toISOString();
@@ -2886,6 +3353,9 @@ export const Repository = {
       role: params.role || 'admin',
       full_name: params.full_name?.trim() || params.username.trim(),
       avatar_url: params.avatar_url,
+      ...(params.organization_id ? { organization_id: params.organization_id } : {}),
+      ...(params.phone !== undefined ? { phone: params.phone } : {}),
+      ...(params.status ? { status: params.status } : {}),
       created_at: now,
       updated_at: now,
     };
@@ -2899,23 +3369,41 @@ export const Repository = {
       const admin = getSupabaseAdmin();
       if (admin) {
         try {
-          // Attempt full upsert including role and username
+          // Attempt full upsert including organization_id, phone, status, role, username
           const { data, error } = await admin
             .from('profiles')
             .upsert(profile, { onConflict: 'id' })
             .select('*')
             .single();
           if (!error && data) {
-            const p = data as Profile;
+            const p = { ...profile, ...(data as Profile) };
             store.profiles.set(p.id, p);
             return p;
           }
 
-          // Graceful fallback if database migration 002 has not been run yet
+          // Graceful fallback if migration 002 or 005 has not been run yet
           if (error) {
-            const errMsg = (error.message || '').toLowerCase();
-            if (errMsg.includes('role') || errMsg.includes('username') || errMsg.includes('schema cache')) {
-              console.warn('[Repository] Supabase profiles table does not have role/username columns yet. Falling back to base fields and auth metadata.');
+            if (isSchemaColumnError(error)) {
+              // First try migration 002 subset (without organization_id/phone/status)
+              const midProfile = {
+                id: profile.id,
+                username: profile.username,
+                email: profile.email,
+                role: profile.role,
+                full_name: profile.full_name,
+                avatar_url: profile.avatar_url,
+                created_at: profile.created_at,
+                updated_at: profile.updated_at,
+              };
+              const { error: midError } = await admin
+                .from('profiles')
+                .upsert(midProfile, { onConflict: 'id' });
+              if (!midError) {
+                store.profiles.set(profile.id, profile);
+                return profile;
+              }
+
+              console.warn('[Repository] Supabase profiles table falling back to base fields and auth metadata.');
               const baseProfile = {
                 id: profile.id,
                 email: profile.email,
