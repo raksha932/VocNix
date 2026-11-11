@@ -176,19 +176,25 @@ export default function TranslatorRoomPage() {
     };
   }, [broadcastState]);
 
-  // Periodic real-time listener count sync
+  // Periodic real-time listener count sync (every 1.5 seconds)
   useEffect(() => {
     if (!roomData?.id) return;
-    const interval = setInterval(async () => {
+    let isMounted = true;
+    const fetchStats = async () => {
       try {
-        const res = await fetch(`/api/rooms/${roomData.id}/stats`, { cache: 'no-store' });
+        const res = await fetch(`/api/rooms/${roomData.id}/stats?t=${Date.now()}`, { cache: 'no-store' });
         const data = await res.json();
-        if (data.success && typeof data.listenerCount === 'number') {
+        if (isMounted && data.success && typeof data.listenerCount === 'number') {
           setListenerCount(data.listenerCount);
         }
       } catch {}
-    }, 2000);
-    return () => clearInterval(interval);
+    };
+    fetchStats();
+    const interval = setInterval(fetchStats, 1500);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, [roomData?.id]);
 
   // Periodic session heartbeat while live to keep backend synchronized
