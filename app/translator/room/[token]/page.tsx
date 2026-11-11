@@ -393,7 +393,7 @@ export default function TranslatorRoomPage() {
     : '';
 
   useEffect(() => {
-    if (isShareModalOpen && audienceUrl) {
+    if (audienceUrl) {
       QRCode.toDataURL(audienceUrl, {
         width: 240,
         margin: 2,
@@ -403,6 +403,16 @@ export default function TranslatorRoomPage() {
         .catch(() => {});
     }
   }, [isShareModalOpen, audienceUrl]);
+
+  const handleDownloadQrCode = () => {
+    if (!qrCodeDataUrl) return;
+    const a = document.createElement('a');
+    a.href = qrCodeDataUrl;
+    const lang = roomData?.languageName || 'channel';
+    const ev = (roomData?.eventTitle || 'event').replace(/\s+/g, '_');
+    a.download = `${ev}_${lang}_QRCode.png`;
+    a.click();
+  };
 
   const handleCopyLink = async () => {
     if (!audienceUrl) return;
@@ -495,14 +505,36 @@ export default function TranslatorRoomPage() {
         {/* Actions & Live status badge */}
         <div className="flex flex-wrap items-center gap-3">
           {roomData?.eventPublicToken && (
-            <button
-              onClick={() => setIsShareModalOpen(true)}
-              className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 flex items-center space-x-1.5 transition shadow-sm active:scale-95"
-              title="Share Audience Link"
-            >
-              <Share2 className="w-3.5 h-3.5" />
-              <span>Share Audience Link</span>
-            </button>
+            <>
+              {/* Language-Specific Audience Link */}
+              <button
+                onClick={handleCopyLink}
+                className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center space-x-1.5 transition shadow-sm active:scale-95"
+                title={`Copy ${roomData?.languageName || ''} Audience Link`}
+              >
+                {copiedLink ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Copied {roomData?.languageName ? `${roomData.languageName} ` : ''}Link!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5 text-blue-400" />
+                    <span>{roomData?.languageName ? `${roomData.languageName} Audience Link` : 'Audience Link'}</span>
+                  </>
+                )}
+              </button>
+
+              {/* Language-Specific QR Code Button */}
+              <button
+                onClick={() => setIsShareModalOpen(true)}
+                className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 flex items-center space-x-1.5 transition shadow-sm active:scale-95"
+                title={`View ${roomData?.languageName || ''} QR Code`}
+              >
+                <QrCode className="w-3.5 h-3.5 text-emerald-400" />
+                <span>{roomData?.languageName ? `${roomData.languageName} QR Code` : 'QR Code'}</span>
+              </button>
+            </>
           )}
 
           <div
@@ -529,6 +561,69 @@ export default function TranslatorRoomPage() {
           </div>
         </div>
       </div>
+
+      {/* Language-Specific Audience Channel Access Card */}
+      {roomData?.eventPublicToken && (
+        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center space-x-4">
+            {qrCodeDataUrl ? (
+              <div
+                onClick={() => setIsShareModalOpen(true)}
+                className="p-2 bg-white rounded-xl shadow-md cursor-pointer hover:scale-105 transition flex-shrink-0"
+                title={`Click to enlarge ${roomData.languageName} QR Code`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={qrCodeDataUrl}
+                  alt={`${roomData.languageName} QR Code`}
+                  className="w-16 h-16 rounded"
+                />
+              </div>
+            ) : null}
+            <div className="space-y-1 text-left">
+              <div className="flex items-center space-x-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center space-x-1.5">
+                  <QrCode className="w-3.5 h-3.5" />
+                  <span>{roomData.languageName} Audience Channel</span>
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20">
+                  {roomData.languageCode?.toUpperCase()}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 max-w-lg">
+                Audience members scanning this QR code or opening the link will automatically listen in <strong>{roomData.languageName}</strong> without choosing a language.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2 w-full md:w-auto">
+            <button
+              onClick={handleCopyLink}
+              className="flex-1 md:flex-initial px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center justify-center space-x-1.5 transition active:scale-95"
+            >
+              {copiedLink ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Copied {roomData.languageName} Link!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Copy {roomData.languageName} Link</span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={() => setIsShareModalOpen(true)}
+              className="flex-1 md:flex-initial px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold flex items-center justify-center space-x-1.5 transition active:scale-95 shadow-md shadow-emerald-500/20"
+            >
+              <QrCode className="w-3.5 h-3.5" />
+              <span>{roomData.languageName} QR Code</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Error alert if any during broadcast */}
       {error && (
@@ -841,7 +936,7 @@ export default function TranslatorRoomPage() {
                 <Share2 className="w-6 h-6" />
               </div>
               <div className="flex items-center justify-center space-x-2">
-                <h3 className="text-xl font-bold text-white tracking-tight">Share Audience Link</h3>
+                <h3 className="text-xl font-bold text-white tracking-tight">{roomData?.languageName ? `${roomData.languageName} QR Code & Link` : 'Audience QR Code & Link'}</h3>
                 {roomData?.languageName && (
                   <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-bold border border-emerald-500/30">
                     {roomData.languageName}
@@ -849,7 +944,7 @@ export default function TranslatorRoomPage() {
                 )}
               </div>
               <p className="text-xs text-slate-400 max-w-xs mx-auto">
-                Audience members open this link and directly enter their dedicated {roomData?.languageName || 'selected'} live audio stream with strict single-language access.
+                Audience members scan this QR code or open the link to automatically enter the {roomData?.languageName || 'selected'} stream with zero language selection required.
               </p>
             </div>
 
@@ -862,8 +957,26 @@ export default function TranslatorRoomPage() {
                 </div>
                 <span className="text-[11px] text-slate-400 flex items-center space-x-1">
                   <QrCode className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Scan to listen directly on mobile</span>
+                  <span>Scan to listen directly in {roomData?.languageName}</span>
                 </span>
+                <div className="flex items-center space-x-2 pt-1">
+                  <button
+                    onClick={handleDownloadQrCode}
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center space-x-1.5 transition border border-slate-700"
+                  >
+                    <Download className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Download QR Image</span>
+                  </button>
+                  <a
+                    href={audienceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center space-x-1.5 transition border border-slate-700"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Test Open</span>
+                  </a>
+                </div>
               </div>
             )}
 

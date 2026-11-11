@@ -17,7 +17,6 @@ import {
   Mic,
   Calendar,
   Layers,
-  QrCode,
   Edit,
   Trash2,
   Building,
@@ -38,7 +37,6 @@ import {
   Send,
 
 } from 'lucide-react';
-import QRCodeModal from '@/components/QRCodeModal';
 
 const COMMON_LANGUAGES = [
   { code: 'ta', name: 'Tamil' },
@@ -89,12 +87,7 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'scheduled' | 'live' | 'ended'>('all');
 
-  // QR Code Modal State
-  const [qrModal, setQrModal] = useState<{ isOpen: boolean; url: string; title: string }>({
-    isOpen: false,
-    url: '',
-    title: '',
-  });
+  
 
   // Create Event Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -1110,10 +1103,7 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-6">
               {displayedEvents.map((event) => {
-                const audienceUrl =
-                  typeof window !== 'undefined'
-                    ? `${window.location.origin}/listen/${event.public_access_token}`
-                    : `/listen/${event.public_access_token}`;
+                
 
                 return (
                   <div
@@ -1153,44 +1143,7 @@ export default function DashboardPage() {
                           <span>Edit</span>
                         </button>
 
-                        <button
-                          onClick={() =>
-                            setQrModal({
-                              isOpen: true,
-                              url: audienceUrl,
-                              title: event.title,
-                            })
-                          }
-                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg border border-slate-700 flex items-center space-x-1.5 transition"
-                        >
-                          <QrCode className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>QR Code</span>
-                        </button>
-
-                        <button
-                          onClick={() => handleCopy(audienceUrl, `aud-${event.id}`)}
-                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg border border-slate-700 flex items-center space-x-1.5 transition"
-                        >
-                          {copiedToken === `aud-${event.id}` ? (
-                            <>
-                              <Check className="w-3.5 h-3.5 text-emerald-400" />
-                              <span>Copied Link!</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5" />
-                              <span>Copy Audience Link</span>
-                            </>
-                          )}
-                        </button>
-
-                        <Link
-                          href={`/listen/${event.public_access_token}`}
-                          target="_blank"
-                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 transition"
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                        </Link>
+                        
 
                         <button
                           onClick={() => handleDeleteEvent(event.id, event.title)}
@@ -1800,13 +1753,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* QR Code Modal for Audience Links */}
-      <QRCodeModal
-        isOpen={qrModal.isOpen}
-        onClose={() => setQrModal({ isOpen: false, url: '', title: '' })}
-        url={qrModal.url}
-        title={qrModal.title}
-      />
+      
 
       {/* Create Event Modal */}
       {isCreateModalOpen && (
