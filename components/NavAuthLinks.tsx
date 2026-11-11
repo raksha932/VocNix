@@ -255,51 +255,36 @@ export default function NavAuthLinks({ session, displayName, initialAvatar }: Na
     );
   }
 
-  // Unauthenticated: Strictly isolated based on current page
-  if (isAdminAuthPage) {
-    // When on Admin Login or Signup, show ONLY Admin option
-    return (
-      <div className="flex items-center space-x-2">
-        <Link
-          href="/admin/login"
-          className="px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-xs sm:text-sm flex items-center space-x-1.5 transition shadow-sm shadow-emerald-500/20"
-        >
-          <Activity className="w-3.5 h-3.5" />
-          <span>Admin Portal</span>
-        </Link>
-      </div>
-    );
-  }
+  // Unauthenticated: Strictly display ONLY ONE button named "Login"
+  // Do NOT display "Admin Login", "Super Admin Login", or any role names in the header.
+  const isSuperAdminMode =
+    process.env.NEXT_PUBLIC_APP_MODE === 'super_admin' ||
+    process.env.NEXT_PUBLIC_APP_ROLE === 'super_admin' ||
+    pathname.startsWith('/super-admin') ||
+    pathname.startsWith('/admin/page') ||
+    pathname === '/admin';
 
-  if (isSuperAdminAuthPage) {
-    // When on Super Admin Login or Signup, show ONLY Super Admin option
+  if (isSuperAdminMode) {
     return (
       <div className="flex items-center space-x-2">
         <Link
           href="/super-admin/login"
-          className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs sm:text-sm flex items-center space-x-1.5 transition shadow-sm shadow-amber-500/20"
+          className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-slate-950 font-bold text-xs sm:text-sm transition shadow-sm shadow-amber-500/20 flex items-center justify-center cursor-pointer"
         >
-          <Shield className="w-3.5 h-3.5 text-slate-950" />
-          <span>Super Admin Portal</span>
+          <span>Login</span>
         </Link>
       </div>
     );
   }
 
-  // Default: Public visitor
+  // Admin Application: Single "Login" button leading directly to /admin/login
   return (
-    <div className="flex items-center space-x-2 sm:space-x-3">
+    <div className="flex items-center space-x-2">
       <Link
         href="/admin/login"
-        className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-medium transition"
+        className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-[0.98] text-white font-semibold text-xs sm:text-sm transition shadow-sm shadow-emerald-500/20 flex items-center justify-center cursor-pointer"
       >
-        Admin Login
-      </Link>
-      <Link
-        href="/super-admin/login"
-        className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs sm:text-sm font-bold transition shadow-sm shadow-amber-500/20"
-      >
-        Super Admin
+        <span>Login</span>
       </Link>
     </div>
   );

@@ -1,7 +1,8 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Radio } from 'lucide-react';
+import { Radio, Shield } from 'lucide-react';
+import { getAppMode } from '@/lib/config/app-mode';
 import { getServerSession, getUserDisplayName } from '@/lib/auth/session';
 import ThemeToggle from '@/components/ThemeToggle';
 import ThemeScript from '@/components/ThemeScript';
@@ -36,6 +37,8 @@ export default async function RootLayout({
   const displayName = effectiveFullName || getUserDisplayName(session);
   const isAuthUser = Boolean(session?.role === 'admin' || session?.role === 'super_admin');
 
+const isSuperAdminApp = getAppMode() === 'super_admin';
+
   return (
     <html lang="en" className="scroll-smooth" suppressHydrationWarning>
       <head>
@@ -45,13 +48,25 @@ export default async function RootLayout({
         <header className="border-b border-slate-200 bg-white/90 dark:border-slate-800 dark:bg-slate-900/80 backdrop-blur sticky top-0 z-50 transition-colors">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
             <Link href="/" className="flex items-center space-x-3 group">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-500 dark:text-emerald-400 group-hover:bg-emerald-500/20 transition">
-                <Radio className="w-5 h-5 animate-pulse" />
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition ${
+                isSuperAdminApp
+                  ? 'bg-amber-500/10 border border-amber-500/30 text-amber-500 dark:text-amber-400 group-hover:bg-amber-500/20'
+                  : 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 dark:text-emerald-400 group-hover:bg-emerald-500/20'
+              }`}>
+                {isSuperAdminApp ? (
+                  <Shield className="w-5 h-5 animate-pulse text-amber-500 dark:text-amber-400" />
+                ) : (
+                  <Radio className="w-5 h-5 animate-pulse text-emerald-500 dark:text-emerald-400" />
+                )}
               </div>
               <div>
                 <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">VocNix</span>
-                <span className="ml-2 text-xs font-semibold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
-                  REAL-TIME AUDIO
+                <span className={`ml-2 text-xs font-semibold px-2 py-0.5 rounded border ${
+                  isSuperAdminApp
+                    ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                    : 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                }`}>
+                  {isSuperAdminApp ? 'INFRASTRUCTURE' : 'REAL-TIME AUDIO'}
                 </span>
               </div>
             </Link>
@@ -60,25 +75,27 @@ export default async function RootLayout({
               {!isAuthUser && (
                 <>
                   <Link
-                    href="/#about"
+                    href={isSuperAdminApp ? "/#architecture" : "/#about"}
                     className="text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition px-2.5 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60"
                   >
-                    About
+                    {isSuperAdminApp ? "Architecture" : "About"}
                   </Link>
 
                   <Link
-                    href="/#features"
+                    href={isSuperAdminApp ? "/#governance" : "/#features"}
                     className="text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition px-2.5 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60"
                   >
-                    Features
+                    {isSuperAdminApp ? "Governance" : "Features"}
                   </Link>
 
-                  <Link
-                    href="/#support"
-                    className="text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition px-2.5 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60"
-                  >
-                    Support
-                  </Link>
+                  {!isSuperAdminApp && (
+                    <Link
+                      href="/#support"
+                      className="text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition px-2.5 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                    >
+                      Support
+                    </Link>
+                  )}
                 </>
               )}
 
