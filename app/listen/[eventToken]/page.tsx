@@ -15,6 +15,7 @@ import {
   Lock,
   ArrowRight,
   LogOut,
+  RotateCcw,
 } from 'lucide-react';
 import { AudioService, AudioConnectionStatus } from '@/lib/audio/AudioService';
 
@@ -58,6 +59,7 @@ export default function AudienceListenPage() {
   const [hasRemoteTrack, setHasRemoteTrack] = useState(false);
   const [listenerCount, setListenerCount] = useState<number>(0);
   const [isExiting, setIsExiting] = useState<boolean>(false);
+  const [hasExited, setHasExited] = useState<boolean>(false);
 
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const audioServiceRef = useRef<AudioService | null>(null);
@@ -409,7 +411,8 @@ export default function AudienceListenPage() {
         sessionStorage.removeItem('vocnix_audience_session_' + eventToken);
       }
 
-      // 4. Reset page state back to Step 1 (Language selection)
+      // 4. Display Thanks for Listening screen
+      setHasExited(true);
       setIsLanguageLocked(false);
       setLockedLanguage(null);
 
@@ -439,6 +442,58 @@ export default function AudienceListenPage() {
       audioElementRef.current.volume = nextMuted ? 0 : volume;
     }
   };
+
+  if (hasExited) {
+    return (
+      <div className="max-w-md mx-auto my-12 p-8 sm:p-10 bg-slate-900/90 border border-slate-800 rounded-3xl text-center space-y-6 shadow-2xl backdrop-blur relative overflow-hidden">
+        {/* Glow accent */}
+        <div className="absolute -top-24 -left-24 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Organization Logo or Icon */}
+        {eventData?.organization?.logo_url ? (
+          <div className="w-20 h-20 rounded-2xl bg-slate-950 border border-slate-800 p-2.5 mx-auto flex items-center justify-center overflow-hidden shadow-lg">
+            <img
+              src={eventData.organization.logo_url}
+              alt={eventData.organization.name || 'Organization Logo'}
+              className="w-full h-full object-contain"
+            />
+          </div>
+        ) : (
+          <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 mx-auto flex items-center justify-center shadow-inner">
+            <CheckCircle2 className="w-8 h-8" />
+          </div>
+        )}
+
+        <div className="space-y-2">
+          <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
+            <Headphones className="w-3.5 h-3.5" />
+            <span>Broadcast Exited</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+            Thanks for Listening!
+          </h1>
+          <p className="text-sm text-slate-400 max-w-sm mx-auto">
+            You have successfully exited the live audio broadcast for{' '}
+            <span className="text-slate-200 font-semibold">{eventData?.title || 'this event'}</span>.
+          </p>
+        </div>
+
+        <div className="pt-2">
+          <button
+            onClick={() => {
+              setHasExited(false);
+              setIsLanguageLocked(false);
+              setLockedLanguage(null);
+            }}
+            className="inline-flex items-center justify-center space-x-2 px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold border border-slate-700 transition"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Rejoin Session</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loadingEvent) {
     return (
@@ -702,12 +757,12 @@ export default function AudienceListenPage() {
               {isExiting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin text-red-400" />
-                  <span>Exiting Channel...</span>
+                  <span>Exiting...</span>
                 </>
               ) : (
                 <>
                   <LogOut className="w-4 h-4 text-red-400" />
-                  <span>Exit Session / Change Language</span>
+                  <span>Exit</span>
                 </>
               )}
             </button>
