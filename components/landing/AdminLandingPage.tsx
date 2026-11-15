@@ -1,268 +1,306 @@
+'use client';
+
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   Radio,
   Mic,
   Headphones,
-  ShieldCheck,
-  Zap,
+  Globe,
+  Users,
+  Calendar,
+  UserCheck,
+  Activity,
+  Shield,
+  Sparkles,
   ArrowRight,
   CheckCircle2,
-  Users,
   HelpCircle,
-  Mail,
-  FileText,
-  Globe,
-  Sparkles,
+  Sliders,
 } from 'lucide-react';
 
-export default function AdminLandingPage() {
+export default function AdminLandingPage({ initialIsLoggedIn = false }: { initialIsLoggedIn?: boolean }) {
+  const [isLoggedIn, setIsLoggedIn] = useState(initialIsLoggedIn);
+
+  useEffect(() => {
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.authenticated) {
+          setIsLoggedIn(true);
+        } else {
+          setIsLoggedIn(false);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const getStartedUrl = isLoggedIn ? '/dashboard' : '/admin/signup';
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-20">
-      {/* Hero Section */}
-      <section className="text-center space-y-6 pt-8">
-        <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-16 space-y-24">
+      {/* ======================================================== */}
+      {/* HERO SECTION                                             */}
+      {/* ======================================================== */}
+      <section className="text-center space-y-6 pt-4 sm:pt-8">
+        <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold tracking-wide">
           <span className="w-2 h-2 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-ping" />
           <span>REAL-TIME HUMAN AUDIO TRANSLATION</span>
         </div>
+
         <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-slate-900 dark:text-white max-w-4xl mx-auto leading-tight">
           Real-Time Human Audio Translation for Global Events
         </h1>
-        <p className="text-lg sm:text-xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
-          Connect professional human interpreters with live audience members worldwide with ultra-low latency browser audio.
+
+        <p className="text-lg sm:text-xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
+          Connect professional human interpreters with live audience members worldwide through ultra-low latency browser audio.
         </p>
 
-        <div className="flex flex-wrap items-center justify-center gap-4 pt-4">
+        <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
           <Link
-            href="/admin/signup"
-            className="px-6 py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-[0.98] text-white font-semibold flex items-center space-x-2 transition shadow-lg shadow-emerald-500/20"
+            href={getStartedUrl}
+            className="px-8 py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-[0.98] text-white font-bold text-base flex items-center space-x-2 transition shadow-lg shadow-emerald-500/20"
           >
             <Sparkles className="w-5 h-5" />
-            <span>Create Organization Account</span>
+            <span>Get Started</span>
             <ArrowRight className="w-4 h-4 ml-1" />
           </Link>
-          <Link
-            href="/admin/login"
-            className="px-6 py-3.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold flex items-center space-x-2 transition border border-slate-300 dark:border-slate-700 shadow-sm"
-          >
-            <Radio className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />
-            <span>Login to Portal</span>
-          </Link>
+        </div>
+
+        <div className="pt-4 flex flex-wrap items-center justify-center gap-6 text-xs text-slate-500 dark:text-slate-400">
+          <span className="flex items-center space-x-1.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+            <span>WebRTC Audio Streaming</span>
+          </span>
+          <span className="flex items-center space-x-1.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+            <span>Zero-Install Listener Access</span>
+          </span>
+          <span className="flex items-center space-x-1.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+            <span>Isolated Language Channels</span>
+          </span>
         </div>
       </section>
 
-      {/* About Section */}
-      <section id="about" className="scroll-mt-24 space-y-8">
+      {/* ======================================================== */}
+      {/* 1. ABOUT SECTION                                         */}
+      {/* ======================================================== */}
+      <section id="about" className="scroll-mt-24 space-y-12">
         <div className="text-center space-y-3">
           <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-semibold uppercase tracking-wider">
             <Globe className="w-3.5 h-3.5" />
             <span>About VocNix</span>
           </div>
-          <h2 className="text-2xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-            Bridging Languages with Authentic Human Translation
+          <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+            Real-Time, Audio-Only Human Translation
           </h2>
-          <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 max-w-3xl mx-auto leading-relaxed">
-            VocNix is an enterprise real-time audio platform tailored for global conferences, keynotes, multilingual summits, and cross-border corporate events. Unlike synthetic voice generators, VocNix empowers professional human interpreters to deliver precise cultural nuances and live translations directly into the hands of attendees.
+          <p className="text-base sm:text-lg text-slate-600 dark:text-slate-400 max-w-3xl mx-auto leading-relaxed">
+            VocNix is a real-time, audio-only human translation platform designed for conferences, summits, and multilingual events. It bridges live speakers and international attendees by streaming authentic human translation directly to browsers with ultra-low latency.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-3 shadow-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* Capability 1 */}
+          <div className="bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-3 shadow-sm hover:border-emerald-500/30 transition">
             <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
               <Users className="w-5 h-5" />
             </div>
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Human-First Audio</h3>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Worldwide Audience Reach</h3>
             <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-              Dedicated to genuine human interpreters with studio-grade noise suppression, ensuring nuance and natural flow without robotic artifacts.
+              Connects professional human translators directly with a worldwide audience during live events.
             </p>
           </div>
 
-          <div className="bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-3 shadow-sm">
+          {/* Capability 2 */}
+          <div className="bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-3 shadow-sm hover:border-blue-500/30 transition">
             <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400">
-              <Zap className="w-5 h-5" />
+              <Radio className="w-5 h-5" />
             </div>
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Zero-Install Audience Join</h3>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">WebRTC Audio Streaming</h3>
             <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-              Attendees simply scan an event QR code or open an event link on any browser. No app downloads, no accounts, and no hardware headsets needed.
+              Uses WebRTC for real-time audio streaming, delivering crisp, instantaneous sound with ultra-low delay.
             </p>
           </div>
 
-          <div className="bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-3 shadow-sm">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400">
-              <ShieldCheck className="w-5 h-5" />
+          {/* Capability 3 */}
+          <div className="bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-3 shadow-sm hover:border-purple-500/30 transition">
+            <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center text-purple-600 dark:text-purple-400">
+              <Globe className="w-5 h-5" />
             </div>
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Dedicated Admin Workspace</h3>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Separate Language Channels</h3>
             <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-              Complete control over your event roster, interpreter assignments, language channels, and real-time broadcast telemetry.
+              Supports multiple languages simultaneously through dedicated, isolated language audio channels.
+            </p>
+          </div>
+
+          {/* Capability 4 */}
+          <div className="bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-3 shadow-sm hover:border-amber-500/30 transition">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400">
+              <Headphones className="w-5 h-5" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Zero-Install Browser Access</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+              Allows audiences to listen through a web browser without creating an account or installing an app.
             </p>
           </div>
         </div>
       </section>
 
-      {/* Features Section */}
+      {/* ======================================================== */}
+      {/* 2. FEATURES SECTION                                      */}
+      {/* ======================================================== */}
       <section id="features" className="scroll-mt-24 space-y-12">
         <div className="text-center space-y-3">
           <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold uppercase tracking-wider">
             <Sparkles className="w-3.5 h-3.5" />
             <span>Platform Features</span>
           </div>
-          <h2 className="text-2xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-            Designed for Flawless Real-Time Execution
+          <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+            Built for Flawless Multilingual Events
           </h2>
-          <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
-            Everything your event production team needs to orchestrate multilingual live broadcasts.
+          <p className="text-base sm:text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
+            Explore the core technical capabilities and management tools built into the VocNix platform.
           </p>
         </div>
 
-        {/* Audio Pipeline Diagram */}
-        <div className="bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 space-y-6 shadow-sm">
-          <div className="text-center space-y-2">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white tracking-wide">Real-Time Audio Pipeline</h3>
-            <p className="text-sm text-slate-600 dark:text-slate-400">Secure real-time audio delivery with isolated language sessions.</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-center">
-            {/* Step 1 */}
-            <div className="bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4 text-center space-y-2">
-              <div className="w-10 h-10 mx-auto rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-                <Mic className="w-5 h-5" />
-              </div>
-              <div className="text-sm font-semibold text-slate-900 dark:text-white">Translator Mic</div>
-              <div className="text-xs text-slate-500 dark:text-slate-400">Live microphone audio with noise suppression</div>
-            </div>
-
-            <div className="hidden md:flex justify-center text-slate-400 dark:text-slate-600">
-              <ArrowRight className="w-6 h-6 animate-pulse" />
-            </div>
-
-            {/* Step 2 */}
-            <div className="bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4 text-center space-y-2">
-              <div className="w-10 h-10 mx-auto rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                <Zap className="w-5 h-5" />
-              </div>
-              <div className="text-sm font-semibold text-slate-900 dark:text-white">Real-Time Audio Server</div>
-              <div className="text-xs text-slate-500 dark:text-slate-400">Secure access and controlled audio delivery</div>
-            </div>
-
-            <div className="hidden md:flex justify-center text-slate-400 dark:text-slate-600">
-              <ArrowRight className="w-6 h-6 animate-pulse" />
-            </div>
-
-            {/* Step 3 */}
-            <div className="bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4 text-center space-y-2">
-              <div className="w-10 h-10 mx-auto rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-600 dark:text-purple-400">
-                <Headphones className="w-5 h-5" />
-              </div>
-              <div className="text-sm font-semibold text-slate-900 dark:text-white">Audience Output</div>
-              <div className="text-xs text-slate-500 dark:text-slate-400">Direct audience playback with zero configuration</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Feature Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white/80 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-3 shadow-sm">
-            <div className="w-9 h-9 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* Feature 1: Real-Time Audio Translation */}
+          <div className="bg-white/80 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-3 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition">
+            <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
               <Radio className="w-5 h-5" />
             </div>
-            <h3 className="text-base font-semibold text-slate-900 dark:text-white">Dynamic Language Channels</h3>
-            <p className="text-sm text-slate-600 dark:text-slate-400">
-              Language channels are spun up dynamically for each event, keeping translator and listener audio isolated by language with instant channel switching.
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Real-Time Audio Translation</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+              Live audio streaming between human translators and audiences using WebRTC.
             </p>
           </div>
 
-          <div className="bg-white/80 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-3 shadow-sm">
-            <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400">
-              <ShieldCheck className="w-5 h-5" />
+          {/* Feature 2: Dynamic Language Channels */}
+          <div className="bg-white/80 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-3 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition">
+            <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400">
+              <Globe className="w-5 h-5" />
             </div>
-            <h3 className="text-base font-semibold text-slate-900 dark:text-white">Authoritative Usage & Session Tracking</h3>
-            <p className="text-sm text-slate-600 dark:text-slate-400">
-              Translation minutes are recorded using authoritative database timestamps with real-time synchronized audience metrics and session management.
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Dynamic Language Channels</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+              Separate audio rooms for languages such as Tamil, Hindi, and French.
             </p>
           </div>
 
-          <div className="bg-white/80 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-3 shadow-sm">
-            <div className="w-9 h-9 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400">
-              <CheckCircle2 className="w-5 h-5" />
+          {/* Feature 3: Translator Console */}
+          <div className="bg-white/80 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-3 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition">
+            <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-600 dark:text-purple-400">
+              <Mic className="w-5 h-5" />
             </div>
-            <h3 className="text-base font-semibold text-slate-900 dark:text-white">Human Translation Audio</h3>
-            <p className="text-sm text-slate-600 dark:text-slate-400">
-              The platform is dedicated exclusively to human translation audio, eliminating latency bottlenecks and bandwidth overhead.
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Translator Console</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+              Microphone access, live audio level monitoring, pause, resume, and stop controls.
+            </p>
+          </div>
+
+          {/* Feature 4: Audience Access */}
+          <div className="bg-white/80 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-3 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition">
+            <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400">
+              <Headphones className="w-5 h-5" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Audience Access</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+              Listen through a dedicated link or QR code without login or app installation.
+            </p>
+          </div>
+
+          {/* Feature 5: Event Management */}
+          <div className="bg-white/80 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-3 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition">
+            <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+              <Calendar className="w-5 h-5" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Event Management</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+              Create, edit, and manage events and their language channels.
+            </p>
+          </div>
+
+          {/* Feature 6: Translator Management */}
+          <div className="bg-white/80 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-3 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition">
+            <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400">
+              <UserCheck className="w-5 h-5" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Translator Management</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+              Add, remove, and assign translators to language channels.
+            </p>
+          </div>
+
+          {/* Feature 7: Live Audience Monitoring */}
+          <div className="bg-white/80 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-3 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition">
+            <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-600 dark:text-purple-400">
+              <Activity className="w-5 h-5" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Live Audience Monitoring</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+              Monitor connected listeners and translation usage.
+            </p>
+          </div>
+
+          {/* Feature 8: Super Admin Management */}
+          <div className="bg-white/80 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-3 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition">
+            <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400">
+              <Shield className="w-5 h-5" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Super Admin Management</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+              Manage organizations, monitor broadcasts, view revenue information, and control subscription plans.
             </p>
           </div>
         </div>
       </section>
 
-      {/* Support Section */}
+      {/* ======================================================== */}
+      {/* 3. SUPPORT SECTION                                       */}
+      {/* ======================================================== */}
       <section id="support" className="scroll-mt-24 space-y-8">
         <div className="text-center space-y-3">
           <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 text-xs font-semibold uppercase tracking-wider">
             <HelpCircle className="w-3.5 h-3.5" />
-            <span>Support & Assistance</span>
+            <span>Support</span>
           </div>
-          <h2 className="text-2xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-            Here to Support Your Live Broadcasts
+          <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+            Platform Support & Assistance
           </h2>
-          <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
-            Need technical guidance, custom channel provisioning, or dry-run audio checks? Our team is available to assist.
+          <p className="text-base sm:text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
+            Guidance and technical assistance for organizations, administrators, and translators using the VocNix platform.
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-4 shadow-sm flex flex-col justify-between">
-            <div className="space-y-3">
-              <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center text-purple-600 dark:text-purple-400">
-                <Mail className="w-5 h-5" />
-              </div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Direct Technical Support</h3>
-              <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-                Reach our engineering and support specialists for immediate event assistance or configuration questions.
-              </p>
+          <div className="bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-3 shadow-sm">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+              <Calendar className="w-5 h-5" />
             </div>
-            <a
-              href="mailto:support@vocnix.com"
-              className="inline-flex items-center space-x-2 text-sm font-semibold text-emerald-600 dark:text-emerald-400 hover:underline pt-2"
-            >
-              <span>support@vocnix.com</span>
-              <ArrowRight className="w-4 h-4" />
-            </a>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Event & Channel Configuration</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+              Assistance for organization administrators on setting up events, configuring language channels, and distributing language-specific audience links.
+            </p>
           </div>
 
-          <div className="bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-4 shadow-sm flex flex-col justify-between">
-            <div className="space-y-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-                <FileText className="w-5 h-5" />
-              </div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Soundcheck & Dry-Runs</h3>
-              <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-                Test translator headsets, calibrate input audio gain, and simulate multi-language distribution ahead of your event.
-              </p>
+          <div className="bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-3 shadow-sm">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400">
+              <Mic className="w-5 h-5" />
             </div>
-            <a
-              href="mailto:support@vocnix.com?subject=Soundcheck%20Assistance"
-              className="inline-flex items-center space-x-2 text-sm font-semibold text-emerald-600 dark:text-emerald-400 hover:underline pt-2"
-            >
-              <span>Request Soundcheck</span>
-              <ArrowRight className="w-4 h-4" />
-            </a>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Translator Audio Setup</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+              Guidance on microphone permissions, browser soundchecks, input level monitoring, and broadcast controls inside the Translator Console.
+            </p>
           </div>
 
-          <div className="bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-4 shadow-sm flex flex-col justify-between">
-            <div className="space-y-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                <Radio className="w-5 h-5" />
-              </div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Event Operations</h3>
-              <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-                Dedicated operational guidance for live event production, translator onboarding, and multi-channel configuration.
-              </p>
+          <div className="bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-3 shadow-sm">
+            <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center text-purple-600 dark:text-purple-400">
+              <Shield className="w-5 h-5" />
             </div>
-            <a
-              href="mailto:support@vocnix.com?subject=Event%20Operations%20Assistance"
-              className="inline-flex items-center space-x-2 text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline pt-2"
-            >
-              <span>Contact Operations</span>
-              <ArrowRight className="w-4 h-4" />
-            </a>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Organization & Account Support</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+              Support for organization onboarding, translator directory assignments, subscription plan tiers, and broadcast usage management.
+            </p>
           </div>
         </div>
       </section>

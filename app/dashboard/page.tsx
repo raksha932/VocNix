@@ -1184,6 +1184,12 @@ export default function DashboardPage() {
                               ? `${window.location.origin}/translator/room/${room.secure_room_token}`
                               : `/translator/room/${room.secure_room_token}`;
 
+                          const targetLangCode = lang?.language_code || room.language_code || '';
+                          const audienceUrl =
+                            typeof window !== 'undefined' && event.public_access_token
+                              ? `${window.location.origin}/listen/${event.public_access_token}${targetLangCode ? `?lang=${encodeURIComponent(targetLangCode)}` : ''}`
+                              : `/listen/${event.public_access_token}${targetLangCode ? `?lang=${encodeURIComponent(targetLangCode)}` : ''}`;
+
                           return (
                             <div
                               key={room.id}
@@ -1215,11 +1221,14 @@ export default function DashboardPage() {
                                 </strong>
                               </div>
 
-                              <div className="flex items-center space-x-2 pt-1 border-t border-slate-900">
-                                <Link
-                                  href={`/translator/room/${room.secure_room_token}`}
+                              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-2 border-t border-slate-900">
+                                {/* Option 1: Copy Translator Link */}
+                                <a
+                                  href={translatorUrl}
                                   target="_blank"
+                                  rel="noopener noreferrer"
                                   onClick={() => {
+                                    handleCopy(translatorUrl, `trn-${room.id}`);
                                     setEvents((prev) =>
                                       prev.map((e) => ({
                                         ...e,
@@ -1229,28 +1238,51 @@ export default function DashboardPage() {
                                       }))
                                     );
                                   }}
-                                  className="flex-1 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center justify-center space-x-1.5 transition"
-                                >
-                                  <Mic className="w-3.5 h-3.5" />
-                                  <span>Launch Translator</span>
-                                </Link>
-
-                                <button
-                                  onClick={() => handleCopy(translatorUrl, `trn-${room.id}`)}
-                                  title="Copy Translator Invite Link"
-                                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+                                  title={`Copy and open ${lang?.language_name || ''} Translator Link`}
+                                  className="flex-1 py-1.5 px-2.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center justify-center space-x-1.5 transition active:scale-95 text-center"
                                 >
                                   {copiedToken === `trn-${room.id}` ? (
-                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                    <>
+                                      <Check className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                                      <span className="truncate">Copied Translator Link!</span>
+                                    </>
                                   ) : (
-                                    <Copy className="w-3.5 h-3.5" />
+                                    <>
+                                      <Copy className="w-3.5 h-3.5 flex-shrink-0" />
+                                      <span className="truncate">Copy Translator Link</span>
+                                    </>
                                   )}
-                                </button>
+                                </a>
+
+                                {/* Option 2: Copy Audience Link */}
+                                <a
+                                  href={audienceUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={() => {
+                                    handleCopy(audienceUrl, `aud-${room.id}`);
+                                  }}
+                                  title={`Copy and open ${lang?.language_name || ''} Audience Link`}
+                                  className="flex-1 py-1.5 px-2.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 border border-blue-500/30 text-xs font-semibold flex items-center justify-center space-x-1.5 transition active:scale-95 text-center"
+                                >
+                                  {copiedToken === `aud-${room.id}` ? (
+                                    <>
+                                      <Check className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                                      <span className="truncate">Copied Audience Link!</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Headphones className="w-3.5 h-3.5 flex-shrink-0" />
+                                      <span className="truncate">Copy Audience Link</span>
+                                    </>
+                                  )}
+                                </a>
 
                                 <button
+                                  type="button"
                                   onClick={() => openEmailTranslatorModal(event, room, lang)}
                                   title="Email Translator Assignment"
-                                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-400 border border-slate-700 hover:border-emerald-500/30 transition flex items-center space-x-1"
+                                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-400 border border-slate-700 hover:border-emerald-500/30 transition flex items-center justify-center flex-shrink-0"
                                 >
                                   <Mail className="w-3.5 h-3.5" />
                                 </button>
@@ -2185,10 +2217,6 @@ export default function DashboardPage() {
                   </p>
                 </div>
               )}
-
-              <p className="text-[11px] text-slate-500 leading-relaxed">
-                An email will be dispatched via <strong>Resend</strong> containing event details and the booth link. If Resend is not configured, you can copy and share the direct booth link above.
-              </p>
 
               <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-800">
                 <button

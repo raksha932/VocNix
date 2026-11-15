@@ -112,8 +112,19 @@ const isSuperAdminApp = getAppMode() === 'super_admin';
 
         <main className="flex-1">{children}</main>
 
-        <footer className="border-t border-slate-200 dark:border-slate-800 py-6 text-center text-xs text-slate-500 transition-colors">
-          <p>© 2026 VocNix Real-Time Audio Platform. Real-Time Human Translation Audio.</p>
+        <footer className="border-t border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/40 backdrop-blur py-8 transition-colors">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 dark:text-slate-400">
+            <div className="flex items-center space-x-2">
+              <span className="font-bold text-slate-900 dark:text-white">VocNix</span>
+              <span>— Real-Time Human Audio Translation Platform</span>
+            </div>
+            <nav className="flex items-center space-x-6">
+              <Link href="/#about" className="hover:text-emerald-500 dark:hover:text-emerald-400 transition">About</Link>
+              <Link href="/#features" className="hover:text-emerald-500 dark:hover:text-emerald-400 transition">Features</Link>
+              <Link href="/#support" className="hover:text-emerald-500 dark:hover:text-emerald-400 transition">Support</Link>
+            </nav>
+            <p>© 2026 VocNix. All rights reserved.</p>
+          </div>
         </footer>
       </body>
     </html>
