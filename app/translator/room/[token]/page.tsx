@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import {
   Mic,
   MicOff,
@@ -32,7 +32,6 @@ import { Mp3Recorder, RecordingState, Mp3RecordingResult } from '@/lib/audio/mp3
 
 export default function TranslatorRoomPage() {
   const params = useParams();
-  const router = useRouter();
   const token = params?.token as string;
 
   // Connection & Room state
@@ -454,12 +453,6 @@ export default function TranslatorRoomPage() {
         </div>
         <h2 className="text-xl font-bold text-white">Access Denied</h2>
         <p className="text-sm text-slate-300">{error}</p>
-        <button
-          onClick={() => router.push('/dashboard')}
-          className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium rounded-lg transition"
-        >
-          Return to Dashboard
-        </button>
       </div>
     );
   }
@@ -721,14 +714,8 @@ export default function TranslatorRoomPage() {
           )}
 
           {broadcastState === 'stopped' && (
-            <div className="text-center space-y-3">
+            <div className="text-center space-y-3 py-2">
               <p className="text-sm text-slate-300 font-medium">Broadcast completed and session recorded.</p>
-              <button
-                onClick={() => router.push('/dashboard')}
-                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-semibold rounded-xl transition"
-              >
-                Back to Dashboard
-              </button>
             </div>
           )}
         </div>
