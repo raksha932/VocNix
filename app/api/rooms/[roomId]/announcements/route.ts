@@ -51,7 +51,7 @@ export async function POST(
     }
 
     const body = await req.json();
-    const { message, senderName, languageCode } = body;
+    const { id, message, senderName, languageCode } = body;
 
     if (!message || typeof message !== 'string' || !message.trim()) {
       return NextResponse.json(
@@ -64,6 +64,7 @@ export async function POST(
     const trimmedMessage = message.trim().slice(0, 500);
 
     const announcement = await Repository.createRoomAnnouncement({
+      id: id || undefined,
       roomId,
       senderName: senderName || 'Translator',
       languageCode: languageCode || undefined,

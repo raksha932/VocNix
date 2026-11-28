@@ -237,28 +237,42 @@ export default function TranslatorRoomPage() {
     };
   }, [sessionId]);
 
-  // Load announcements for this room
+  // Load announcements for this room with periodic sync
   useEffect(() => {
     if (!roomData?.id) return;
+    const targetRoomId = roomData.id;
+    let isMounted = true;
+
     const fetchAnnouncements = async () => {
       try {
-        const res = await fetch(`/api/rooms/${roomData.id}/announcements`, { cache: 'no-store' });
+        const res = await fetch(`/api/rooms/${targetRoomId}/announcements`, { cache: 'no-store' });
         const data = await res.json();
-        if (data.success && Array.isArray(data.announcements)) {
-          setAnnouncements(
-            data.announcements.map((a: any) => ({
+        if (isMounted && data.success && Array.isArray(data.announcements)) {
+          setAnnouncements((prev) => {
+            const incoming: AnnouncementData[] = data.announcements.map((a: any) => ({
               id: a.id,
               roomId: a.room_id || a.roomId,
               senderName: a.sender_name || a.senderName || 'Translator',
               languageCode: a.language_code || a.languageCode,
               message: a.message,
               createdAt: a.created_at || a.createdAt,
-            }))
-          );
+            }));
+            if (prev.length !== incoming.length) {
+              return incoming;
+            }
+            return prev;
+          });
         }
       } catch {}
     };
+
     fetchAnnouncements();
+    const syncInterval = setInterval(fetchAnnouncements, 2500);
+
+    return () => {
+      isMounted = false;
+      clearInterval(syncInterval);
+    };
   }, [roomData?.id]);
 
   const handleSendAnnouncement = async (textToSend?: string) => {
@@ -273,12 +287,14 @@ export default function TranslatorRoomPage() {
     setAnnouncementSuccessMsg(null);
     try {
       const senderName = `Translator (${roomData.languageName || 'Live'})`;
+      const clientMessageId = `ann_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       let livekitAnn: AnnouncementData | null = null;
 
-      // 1. Instant zero-latency broadcast via WebRTC DataChannel if live
-      if (audioServiceRef.current && broadcastState === 'live') {
+      // 1. Instant zero-latency broadcast via WebRTC DataChannel if live or paused
+      if (audioServiceRef.current && (broadcastState === 'live' || broadcastState === 'paused')) {
         try {
           livekitAnn = await audioServiceRef.current.sendAnnouncement(content, {
+            id: clientMessageId,
             senderName,
             languageCode: roomData.languageCode,
             roomId: roomData.id,
@@ -288,11 +304,12 @@ export default function TranslatorRoomPage() {
         }
       }
 
-      // 2. Persist to REST database endpoint for late-joining audience
+      // 2. Persist to REST database endpoint for late-joining audience and reliability
       const res = await fetch(`/api/rooms/${roomData.id}/announcements`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          id: clientMessageId,
           message: content,
           senderName,
           languageCode: roomData.languageCode,
@@ -305,7 +322,7 @@ export default function TranslatorRoomPage() {
       }
 
       const finalItem: AnnouncementData = livekitAnn || {
-        id: resData.announcement?.id || `ann_${Date.now()}`,
+        id: resData.announcement?.id || clientMessageId,
         roomId: roomData.id,
         senderName,
         languageCode: roomData.languageCode,
@@ -313,7 +330,10 @@ export default function TranslatorRoomPage() {
         createdAt: resData.announcement?.created_at || new Date().toISOString(),
       };
 
-      setAnnouncements((prev) => [...prev, finalItem]);
+      setAnnouncements((prev) => {
+        if (prev.some((p) => p.id === finalItem.id || p.message === finalItem.message)) return prev;
+        return [...prev, finalItem];
+      });
       setAnnouncementText('');
       setAnnouncementSuccessMsg('Announcement broadcasted to audience!');
       setTimeout(() => setAnnouncementSuccessMsg(null), 3000);

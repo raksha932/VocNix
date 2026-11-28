@@ -206,7 +206,16 @@ export default function AudienceListenPage() {
         },
         onAnnouncementReceived: (ann) => {
           setAnnouncements((prev) => {
-            if (prev.some((a) => a.id === ann.id)) return prev;
+            if (
+              prev.some(
+                (a) =>
+                  a.id === ann.id ||
+                  (a.message === ann.message &&
+                    Math.abs(new Date(a.createdAt).getTime() - new Date(ann.createdAt).getTime()) < 10000)
+              )
+            ) {
+              return prev;
+            }
             return [...prev, ann];
           });
           setNewAnnouncementAlert(ann);
@@ -221,28 +230,71 @@ export default function AudienceListenPage() {
     return audioServiceRef.current;
   };
 
-  // Load past announcements for the locked room
+  // Real-time synchronization of announcements for the audience
   useEffect(() => {
     if (!lockedLanguage?.roomId) return;
-    const loadPastAnnouncements = async () => {
+    const targetRoomId = lockedLanguage.roomId;
+    let isMounted = true;
+    let isInitialLoad = true;
+
+    const syncAnnouncements = async () => {
       try {
-        const res = await fetch(`/api/rooms/${lockedLanguage.roomId}/announcements`, { cache: 'no-store' });
+        const res = await fetch(`/api/rooms/${targetRoomId}/announcements`, { cache: 'no-store' });
+        if (!res.ok) return;
         const data = await res.json();
-        if (data.success && Array.isArray(data.announcements)) {
-          setAnnouncements(
-            data.announcements.map((a: any) => ({
-              id: a.id,
-              roomId: a.room_id || a.roomId,
-              senderName: a.sender_name || a.senderName || 'Translator',
-              languageCode: a.language_code || a.languageCode,
-              message: a.message,
-              createdAt: a.created_at || a.createdAt,
-            }))
+        if (!isMounted || !data.success || !Array.isArray(data.announcements)) return;
+
+        const incoming: AnnouncementData[] = data.announcements.map((a: any) => ({
+          id: a.id,
+          roomId: a.room_id || a.roomId,
+          senderName: a.sender_name || a.senderName || 'Translator',
+          languageCode: a.language_code || a.languageCode,
+          message: a.message,
+          createdAt: a.created_at || a.createdAt,
+        }));
+
+        setAnnouncements((prev) => {
+          const prevIds = new Set(prev.map((p) => p.id));
+          const newItems = incoming.filter(
+            (inc) =>
+              !prevIds.has(inc.id) &&
+              !prev.some(
+                (p) =>
+                  p.message === inc.message &&
+                  Math.abs(new Date(p.createdAt).getTime() - new Date(inc.createdAt).getTime()) < 10000
+              )
           );
-        }
-      } catch {}
+
+          if (newItems.length > 0) {
+            if (!isInitialLoad) {
+              const latest = newItems[newItems.length - 1];
+              setNewAnnouncementAlert(latest);
+              playAnnouncementChime();
+              setTimeout(() => setNewAnnouncementAlert(null), 7000);
+            }
+            return incoming;
+          }
+
+          if (prev.length !== incoming.length) {
+            return incoming;
+          }
+
+          return prev;
+        });
+
+        isInitialLoad = false;
+      } catch {
+        // network resilience
+      }
     };
-    loadPastAnnouncements();
+
+    syncAnnouncements();
+    const intervalTimer = setInterval(syncAnnouncements, 1500);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalTimer);
+    };
   }, [lockedLanguage?.roomId]);
 
   useEffect(() => {

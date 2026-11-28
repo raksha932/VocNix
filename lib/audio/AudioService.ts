@@ -249,9 +249,10 @@ export class AudioService {
     // Real-time WebRTC DataChannel listener for announcements and interactive messages
     this.room.on(
       RoomEvent.DataReceived,
-      (payload: Uint8Array, participant?: RemoteParticipant, kind?: any, topic?: string) => {
+      (payload: Uint8Array | ArrayBuffer, participant?: RemoteParticipant, kind?: any, topic?: string) => {
         try {
-          const text = new TextDecoder().decode(payload);
+          const rawBytes = payload instanceof Uint8Array ? payload : new Uint8Array(payload as any);
+          const text = new TextDecoder().decode(rawBytes);
           const data = JSON.parse(text);
           if (data && (data.type === 'announcement' || topic === 'announcement' || data.message)) {
             const announcement: AnnouncementData = {
@@ -277,6 +278,7 @@ export class AudioService {
   public async sendAnnouncement(
     message: string,
     metadata?: {
+      id?: string;
       senderName?: string;
       languageCode?: string;
       roomId?: string;
@@ -292,7 +294,7 @@ export class AudioService {
     }
 
     const announcement: AnnouncementData = {
-      id: `ann_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: metadata?.id || `ann_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       roomId: metadata?.roomId,
       senderName: metadata?.senderName || this.room.localParticipant.name || 'Translator',
       languageCode: metadata?.languageCode,

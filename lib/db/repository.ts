@@ -3994,6 +3994,7 @@ export const Repository = {
   },
 
   async createRoomAnnouncement(data: {
+    id?: string;
     roomId: string;
     senderName?: string;
     languageCode?: string;
@@ -4005,7 +4006,7 @@ export const Repository = {
     }
 
     const announcement: RoomAnnouncement = {
-      id: `ann_${randomUUID()}`,
+      id: data.id || `ann_${randomUUID()}`,
       room_id: data.roomId,
       sender_name: data.senderName || 'Translator',
       language_code: data.languageCode,
